@@ -1,0 +1,36 @@
+############################################
+# Seestar stacking experiment - FROM RAW LIGHTS
+# Registers ONCE, then stacks many rejection/weight variants.
+# Run from the folder that contains lights/:
+#   siril-cli -d <workdir> -s experiment_full.ssf
+# Results -> process/result_vNN_*.fit   (measure with measure_stacks.py)
+# Seestar already did dark/bias on-device, so we only debayer (no calib frames).
+# Adapt the variant block to the dataset (see SKILL.md "Choosing variants").
+############################################
+requires 1.2.0
+
+cd lights
+link light -out=../process
+cd ../process
+calibrate light -debayer
+register pp_light -2pass
+seqapplyreg pp_light
+
+# === BASELINE = exactly what the default Seestar script does (winsor 3 3) ===
+stack r_pp_light rej w 3 3     -norm=addscale -output_norm -rgb_equal -out=result_v07_winsor_3_3_BASELINE
+
+# === Always-useful comparison set ===
+stack r_pp_light rej s 3 3     -norm=addscale -output_norm -rgb_equal -out=result_v03_sigma_3_3
+stack r_pp_light rej s 3.5 3.5 -norm=addscale -output_norm -rgb_equal -out=result_v05_sigma_35_35
+stack r_pp_light rej p 0.2 0.2 -norm=addscale -output_norm -rgb_equal -out=result_v10_percentile_02
+stack r_pp_light rej s 2.5 2.5 -norm=addscale -output_norm -rgb_equal -out=result_v02_sigma_25_25
+
+# === Small sets (<~30 frames): keep this, it is a safe tiny win ===
+stack r_pp_light rej s 3 3 -weight=noise -norm=addscale -output_norm -rgb_equal -out=result_v16_sigma_3_3_wnoise
+
+# === Large sets + STAR FIELD only (skip for nebula-filled frames!) ===
+stack r_pp_light rej w 3 3 -weight=nbstars     -norm=addscale -output_norm -rgb_equal -out=result_v15_winsor_3_3_wnbstars
+stack r_pp_light rej w 3 3 -weight=wfwhm       -norm=addscale -output_norm -rgb_equal -out=result_v14_winsor_3_3_wwfwhm
+stack r_pp_light rej w 3 3 -filter-wfwhm=90%   -norm=addscale -output_norm -rgb_equal -out=result_v12_winsor_3_3_wfwhm90
+
+close

@@ -1,0 +1,21 @@
+# Python venv
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Astro image data (large binaries — not version-controlled)
+*.fit
+*.fits
+*.tif
+*.tiff
+*.xisf
+*.png
+*.jpg
+*.jpeg
+
+# Siril working/output
+process/
+metrics.csv
+*.seq
+siril_experiment.log
