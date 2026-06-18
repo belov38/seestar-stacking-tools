@@ -32,28 +32,29 @@ Noise drop and star blur both rise monotonically; faint stars are largely kept (
 blur, not lost stars). ~0.3 banks a real ~18% noise cut for <3% blur.
 
 ## Tools (in this skill dir)
-- `prefs_denoise.json` — GraXpert preferences template (edit `denoise_strength`).
+- `denoise.py INPUT.fits OUTPUT.fits [STRENGTH] [--gpu]` — **the runner**: runs GraXpert
+  denoise and restores the FITS header in one step, so the output is ready for plate
+  solving / SPCC. Default strength 0.3, CPU. Needs `astropy`; GraXpert installed.
 - `measure_denoise.py BASELINE.fit DENOISED...fit` — noise drop %, bright-star FWHM Δ (blur),
   faint-star retention; flags `OVER-DENOISED`, recommends the strongest clean setting. Needs
   `numpy`, `astropy`, `sep`, `scipy`.
+- `prefs_denoise.json` — GraXpert preferences template (only needed if calling GraXpert raw).
 
 ## Workflow
-1. **Sweep strengths** with GraXpert headless (e.g. 0.3 / 0.5 / 0.8), each with its own prefs:
+1. **Sweep strengths** with the runner (each writes a header-complete FITS):
    ```
-   GraXpert -cli -cmd denoising -gpu false \
-     -preferences_file prefs_denoise.json -output <out_prefix> <stack.fits>
+   python denoise.py <stack.fits> dn03.fit 0.3
+   python denoise.py <stack.fits> dn05.fit 0.5
+   python denoise.py <stack.fits> dn08.fit 0.8
    ```
-   GraXpert binary (macOS): `/Applications/GraXpert.app/Contents/MacOS/GraXpert`. Writes
-   `<out_prefix>.fits`. `-gpu false` is the reliable default (CPU; ~3-4 min/full frame).
-   Edit `denoise_strength` in the prefs JSON per run.
-   **GraXpert strips the FITS header** (keeps only NAXIS), so restore it after each run:
-   ```
-   python ../../../tools/restore_fits_header.py <input.fits> <out_prefix>.fits
-   ```
-   This puts back OBJECT/RA/DEC/FOCALLEN/XPIXSZ/FILTER… needed for plate solving and SPCC.
-2. **Measure:** `python measure_denoise.py <baseline> <dn03>.fits <dn05>.fits <dn08>.fits`.
+   ~3-4 min/run (CPU; add `--gpu` for CoreML). The runner restores OBJECT/RA/DEC/FOCALLEN/
+   XPIXSZ/FILTER… that GraXpert strips, copying them from the input stack.
+2. **Measure:** `python measure_denoise.py <baseline> dn03.fit dn05.fit dn08.fit`.
 3. **Adopt** the recommended (strongest noise drop with FWHM Δ < ~3% and faint kept > ~0.85).
    If even the lowest strength over-blurs, the stack is already clean enough — skip denoise.
+
+Raw GraXpert (without the wrapper) strips the header — if you call it directly, restore it
+with `python ../../../tools/restore_fits_header.py <input.fits> <out>.fits` afterwards.
 
 ## Choosing strength
 - `denoise_strength`: 0.0 → 1.0. **Start ~0.3** on deeply-stacked Seestar data.
