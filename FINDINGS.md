@@ -63,3 +63,7 @@ The Seestar header has RA/DEC + FOCALLEN + XPIXSZ but no WCS — enough to seed 
 `stack → background extraction → deconvolution → denoise → stretch`. Deconvolution and denoise
 run on **linear** data; denoise comes **after** deconvolution (deconv raises noise, denoise
 cleans it; denoising first removes detail deconv needs).
+
+Run all steps at once with the `/seestar-pipeline` command (agent orchestrator): it auto-picks
+each step's parameters by measurement and stops for the user only on doubtful cases (deconv
+rings, backfired background, volatile star-weighted stack).

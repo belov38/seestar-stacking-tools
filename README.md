@@ -24,18 +24,32 @@ Then stretch (manual). Each skill has a `SKILL.md` (when/how + variant guidance)
 
 `deconv/` is a research record (why mfdeconv was rejected), not a runtime tool.
 
+### Run the whole pipeline: `/seestar-pipeline`
+
+`/seestar-pipeline <lights-dir | stack.fits>` chains all four steps as an agent orchestrator:
+it auto-detects the input (a lights folder → stack first; a single FITS → ready stack), picks
+each step's parameters by measurement, generates before/after PNG previews, and **stops to ask
+only when a choice is doubtful** (deconv rings, a backfired background, a volatile star-weighted
+stack). Otherwise it adopts the measured winner and advances. Outputs land under
+`out/pipeline/<object>_<stamp>/` with a `REPORT.md` log; the final deliverable is a
+header-complete linear FITS plus a stretched PNG, ready for your own stretch / plate solve / SPCC.
+
 ### tools/
 
 - `tools/restore_fits_header.py SOURCE TARGET` — **GraXpert strips the FITS header** (keeps
   only NAXIS), losing OBJECT/RA/DEC/FOCALLEN/XPIXSZ/FILTER… Run this after every GraXpert step
   to copy the metadata back from a header-bearing source (the Siril stack), so plate solving
   and colour calibration (SPCC/PCC) keep their hints. Siril steps preserve headers themselves.
+- `tools/preview.py RESULT.fits [--ref BEFORE.fits] [--out p.png]` — composite validation PNG:
+  full-frame auto-stretch + bright-star zoom crops (reveal deconv rings / star colour) +
+  optional before/after, all under one linked stretch. Used by `/seestar-pipeline` at each
+  validation gate.
 
 ## Setup
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install astropy numpy sep scipy pytest
+.venv/bin/python -m pip install astropy numpy sep scipy pillow pytest
 ```
 
 `measure_stacks.py` needs astropy+numpy; the deconv/bg/denoise measurers also need `sep`+`scipy`.
