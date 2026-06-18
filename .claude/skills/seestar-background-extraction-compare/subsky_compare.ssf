@@ -1,0 +1,16 @@
+requires 1.2.0
+#
+# Optional: Siril subsky variants to check whether sample-based extraction
+# backfires on your target. Needs stack.fit in the workdir.
+#   siril-cli -d <workdir> -s subsky_compare.ssf
+# On dense star fields subsky typically ADDS a gradient (bad samples) -> use GraXpert AI.
+#
+load stack
+subsky 1
+save sub_poly1
+load stack
+subsky 4
+save sub_poly4
+load stack
+subsky -rbf -samples=20 -smooth=0.5
+save sub_rbf
