@@ -1,0 +1,35 @@
+requires 1.2.0
+#
+# Seestar deconvolution experiment: Siril Richardson-Lucy variants on a STACK.
+# Run:  siril-cli -d <workdir> -s experiment.ssf
+#   workdir must contain the stack as  stack.fit  (copy your result_*.fit there).
+#   Outputs rl_*.fit next to it; measure with  measure_deconv.py stack.fit rl_*.fit
+#
+# Key points:
+#   - makepsf stars measures the PSF FROM THE STACK -> matches real star size
+#     (this is why Siril RL stays clean where per-frame-PSF tools ring).
+#   - keep iters LOW (~10). On undersampled S30 data the gain saturates by ~10it
+#     and ringing starts beyond it. -tv is cheap insurance (lower -alpha = more reg).
+#   - the BASELINE is stack.fit itself (no deconvolution).
+#
+# --- variant block: edit/add lines, reload + remake PSF before each rl ---
+
+load stack
+makepsf stars
+rl -iters=10
+save rl_notv_10it
+
+load stack
+makepsf stars
+rl -iters=10 -tv
+save rl_tv_10it
+
+load stack
+makepsf stars
+rl -iters=10 -tv -alpha=500
+save rl_tv_a500_10it
+
+load stack
+makepsf stars
+rl -iters=30 -tv
+save rl_tv_30it
