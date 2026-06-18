@@ -1,0 +1,8 @@
+# Pinned to the versions verified working with vendored mfdeconv on Apple Silicon (MPS).
+# Python 3.13 required (matches upstream runtime target).
+torch==2.12.1
+numpy==2.4.6
+astropy==8.0.0
+sep==1.4.1
+scipy==1.17.1
+threadpoolctl==3.6.0
