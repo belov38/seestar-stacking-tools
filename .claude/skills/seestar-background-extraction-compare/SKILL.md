@@ -53,6 +53,11 @@ open sky). On crowded fields it fails — measure, don't assume. GraXpert AI is 
    GraXpert binary (macOS): `/Applications/GraXpert.app/Contents/MacOS/GraXpert`. Writes
    `<out_prefix>.fits`. `-gpu true` uses CoreML (the `E5RT … unbounded dimension` warnings are
    non-fatal — it falls back to CPU and completes); `-gpu false` is the reliable default.
+   **GraXpert strips the FITS header** (keeps only NAXIS), so immediately restore it:
+   ```
+   python ../../../tools/restore_fits_header.py <stack.fits> <out_prefix>.fits
+   ```
+   This puts back OBJECT/RA/DEC/FOCALLEN/XPIXSZ/FILTER… needed for plate solving and SPCC.
 2. **(optional) Siril subsky** for comparison: `siril-cli -d <workdir> -s subsky_compare.ssf`
    (needs `stack.fit` in the workdir). Confirms backfire on crowded fields.
 3. **Measure:** `python measure_bg.py <stack> <graxpert_out>.fits <subsky_out>.fit ...`.

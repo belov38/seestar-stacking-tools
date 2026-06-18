@@ -46,6 +46,11 @@ blur, not lost stars). ~0.3 banks a real ~18% noise cut for <3% blur.
    GraXpert binary (macOS): `/Applications/GraXpert.app/Contents/MacOS/GraXpert`. Writes
    `<out_prefix>.fits`. `-gpu false` is the reliable default (CPU; ~3-4 min/full frame).
    Edit `denoise_strength` in the prefs JSON per run.
+   **GraXpert strips the FITS header** (keeps only NAXIS), so restore it after each run:
+   ```
+   python ../../../tools/restore_fits_header.py <input.fits> <out_prefix>.fits
+   ```
+   This puts back OBJECT/RA/DEC/FOCALLEN/XPIXSZ/FILTER… needed for plate solving and SPCC.
 2. **Measure:** `python measure_denoise.py <baseline> <dn03>.fits <dn05>.fits <dn08>.fits`.
 3. **Adopt** the recommended (strongest noise drop with FWHM Δ < ~3% and faint kept > ~0.85).
    If even the lowest strength over-blurs, the stack is already clean enough — skip denoise.

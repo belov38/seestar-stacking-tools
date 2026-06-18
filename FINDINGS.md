@@ -50,6 +50,14 @@ Use **GraXpert denoise**, strength **~0.3** on deep stacks. Monotonic noise↔bl
 the noise floor is already low, so blur overtakes benefit fast; raise strength only on genuinely
 noisy data. Cost is star blur (FWHM), not lost faint stars → FWHM is the guard metric.
 
+## FITS headers
+
+Siril preserves the full FITS header (OBJECT, DATE-OBS, EXPTIME, INSTRUME, TELESCOP, FOCALLEN,
+XPIXSZ/YPIXSZ, RA/DEC, FILTER, GAIN…). **GraXpert strips it** to just NAXIS. After every
+GraXpert step run `tools/restore_fits_header.py SOURCE TARGET` (SOURCE = a header-bearing FITS
+like the Siril stack) so plate solving and SPCC/PCC keep their pointing/scale/filter hints.
+The Seestar header has RA/DEC + FOCALLEN + XPIXSZ but no WCS — enough to seed a plate solve.
+
 ## Pipeline order
 
 `stack → background extraction → deconvolution → denoise → stretch`. Deconvolution and denoise

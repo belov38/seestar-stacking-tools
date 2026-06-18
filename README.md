@@ -24,6 +24,13 @@ Then stretch (manual). Each skill has a `SKILL.md` (when/how + variant guidance)
 
 `deconv/` is a research record (why mfdeconv was rejected), not a runtime tool.
 
+### tools/
+
+- `tools/restore_fits_header.py SOURCE TARGET` — **GraXpert strips the FITS header** (keeps
+  only NAXIS), losing OBJECT/RA/DEC/FOCALLEN/XPIXSZ/FILTER… Run this after every GraXpert step
+  to copy the metadata back from a header-bearing source (the Siril stack), so plate solving
+  and colour calibration (SPCC/PCC) keep their hints. Siril steps preserve headers themselves.
+
 ## Setup
 
 ```bash
