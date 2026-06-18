@@ -1,25 +1,39 @@
-# Seestar stacking tools
+# Seestar processing tools
 
-Tools for stacking ZWO Seestar deep-sky FITS in Siril and finding the best
-stacking parameters per session by measuring background noise and SNR.
+Tools for post-processing ZWO Seestar (S30, IMX585, GRBG) deep-sky FITS, built as a set
+of **measure-and-compare** skills: for each step, run a few variants, measure the result
+objectively, and adopt the best — or keep the baseline if nothing wins cleanly.
 
-## Contents
+Everything is versioned in this repo. Empirical findings live in [`FINDINGS.md`](FINDINGS.md)
+(and [`deconv/FINDINGS.md`](deconv/FINDINGS.md) for the deconvolution deep-dive) — not in any
+external/global store.
 
-- `.claude/skills/seestar-stacking-compare/` — the skill (run a parameter sweep,
-  measure each result, compare to the default Seestar script, save the winner):
-  - `SKILL.md` — when/how to use + variant-selection guidance
-  - `experiment_full.ssf` / `experiment_reuse.ssf` — Siril stacking scripts
-  - `measure_stacks.py` — ranks results, BEST-vs-BASELINE verdict, writes `metrics.csv`
-  - `test_measure_stacks.py` — pytest unit + smoke tests
-- `Seestar_Preprocessing.ssf` — Cyril Richard's stock Seestar Siril script (reference baseline)
-- `measure_stacks.py` — earlier dev copy of the measurer
+## Pipeline & skills
+
+Processing order, one skill per step (all in `.claude/skills/`, project-scoped):
+
+| step | skill | tool | one-line finding |
+|---|---|---|---|
+| 1. Stack | `seestar-stacking-compare` | Siril | best params depend on frame count + target type |
+| 2. Background extraction | `seestar-background-extraction-compare` | GraXpert AI | Siril subsky backfires on star fields; the cast is the real problem |
+| 3. Deconvolution | `seestar-deconvolution-compare` | Siril RL ~10it | mfdeconv/Seti ring; measure ring-vs-background, not just FWHM |
+| 4. Denoise | `seestar-denoise-compare` | GraXpert ~0.3 | monotonic noise↔blur tradeoff; deep stacks need little |
+
+Then stretch (manual). Each skill has a `SKILL.md` (when/how + variant guidance), a runner
+(`.ssf` / GraXpert prefs JSON), and a `measure_*.py` that prints an adopt/skip verdict.
+
+`deconv/` is a research record (why mfdeconv was rejected), not a runtime tool.
 
 ## Setup
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install astropy numpy pytest
+.venv/bin/python -m pip install astropy numpy sep scipy pytest
 ```
+
+`measure_stacks.py` needs astropy+numpy; the deconv/bg/denoise measurers also need `sep`+`scipy`.
+External tools: Siril (`/Applications/Siril.app/Contents/MacOS/siril-cli`) and GraXpert
+(`/Applications/GraXpert.app/Contents/MacOS/GraXpert`), both run headless.
 
 ## Run tests
 
@@ -28,12 +42,9 @@ cd .claude/skills/seestar-stacking-compare
 ../../../.venv/bin/python -m pytest -q
 ```
 
-## Key finding
+## Key cross-cutting lesson
 
-The optimal stacking parameters depend on **frame count AND target type** — there is
-no single best setting, so you measure per session. Star-based weighting
-(`-weight=nbstars`/`wfwhm`) is the most volatile knob: it won big on an open cluster
-(M6, +7% faint SNR) but collapsed on a dense globular and on nebula-filled frames.
-Always measure; adopt a tuned variant only on a measured ≥3% faint-SNR win.
-
-Image data (`*.fit`) and the venv are gitignored.
+The "obvious" tool backfires somewhere on almost every step (star weighting on some stacks,
+Siril subsky on star fields, multi-frame deconv rings, denoise blurs). So every step
+**measures** and adopts only on a clean, quantified win. Image data (`*.fit`) and the venv are
+gitignored.
