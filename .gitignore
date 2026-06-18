@@ -19,3 +19,6 @@ process/
 metrics.csv
 *.seq
 siril_experiment.log
+
+# Scratch inspection outputs (FITS for visual A/B; already covered by *.fit)
+out/
