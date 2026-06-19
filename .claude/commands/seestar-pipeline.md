@@ -1,5 +1,5 @@
 ---
-description: Run a Seestar S30 frame through the full processing pipeline (stack → background → deconv → denoise → stretch), auto-picking parameters by measurement and stopping only when a choice is doubtful.
+description: Run a Seestar S30 frame through the full processing pipeline (stack → background → deconv → denoise → plate-solve → stretch), auto-picking parameters by measurement, stopping only when a choice is doubtful, and emitting AstroBin title/description + acquisition CSV.
 argument-hint: <lights-dir | stack.fits>
 ---
 
@@ -17,8 +17,13 @@ Input path: `$1` (a directory of raw lights, or a single stacked FITS).
 - Python: `.venv/bin/python` (has astropy, numpy, sep, scipy, Pillow).
 - Siril CLI: `/Applications/Siril.app/Contents/MacOS/siril-cli`
 - GraXpert CLI: `/Applications/GraXpert.app/Contents/MacOS/GraXpert`
-- Pipeline order is fixed: **stack → background extraction → deconvolution → denoise → stretch**.
-  Deconv and denoise run on **linear** data; denoise comes after deconv.
+- AstroBin session CSV: `tools/astrobin_session_csv.py` (scans lights, emits the import CSV).
+- Pipeline order is fixed: **stack → background extraction → deconvolution → denoise →
+  plate-solve → stretch**. Deconv and denoise run on **linear** data; denoise comes after deconv;
+  plate-solve runs on the final linear master.
+- **GraXpert writes its output path relative to the *input* file's directory** — always pass an
+  **absolute** output path to GraXpert / `denoise.py`, or the save silently fails (rc=1 after
+  "Finished denoising") with a doubled path.
 - Each step is a skill with a `measure_*.py` that prints a verdict — trust the numbers, but the
   **stop rules below override blind adoption** (FWHM once fooled us into adopting deconv donuts).
 
@@ -26,11 +31,17 @@ Input path: `$1` (a directory of raw lights, or a single stacked FITS).
 
 1. **Deps:** `.venv/bin/python -c "import astropy,numpy,sep,scipy,PIL"`. If it fails, tell the
    user to run `.venv/bin/python -m pip install sep scipy pillow` and stop.
-2. **Resolve input `$1`:**
-   - A **directory** → stacking mode (start at Step 1). Sanity-check it holds `Light_*.fit`
-     (or `*.fit` lights); if none, error out clearly.
-   - A **single FITS** → ready-stack mode (skip Step 1; this file is the base for Step 2). Verify
-     it has a real header (OBJECT/RA/DEC) — if it's header-stripped, warn the user.
+2. **Resolve input `$1` to the Siril `lights/` convention.** The stacking `.ssf` scripts
+   hardcode `cd lights`, so any other layout silently breaks at `link` — enforce it:
+   - `$1` is (or ends in) **`lights/`** containing `.fit` → `LIGHTS=$1`, `WORKDIR=dirname($1)`.
+   - `$1` is a **dir containing a `lights/` subdir** → `WORKDIR=$1`, `LIGHTS=$1/lights`.
+   - `$1` is a **dir of `.fit` not named `lights`** (no `lights/` subdir) → **error clearly**:
+     ask the user to move the subs into `<dir>/lights/`. Do **not** guess or auto-rename.
+   - `$1` is a **single FITS** → ready-stack mode (skip Step 1; this file is the Step-2 base).
+     Verify it has a real header (OBJECT/RA/DEC) — warn if header-stripped. (No `lights/` needed.)
+   Then **validate**: `LIGHTS/` exists and holds ≥1 `.fit` (else error out). **Quarantine `.jpg`:**
+   Seestar drops `.jpg` thumbnails that break Siril `link` — move any to `LIGHTS/_jpg_aside/`
+   (move, don't delete — reversible) and report the count.
 3. **Read `OBJECT`** from a representative FITS (astropy) for naming; fall back to the basename.
 4. **Make the run dir:** `STAMP=$(date -u +%Y%m%dT%H%M%SZ)`, then
    `out/pipeline/<OBJECT>_<STAMP>/` with subdirs `01_stack 02_background 03_deconv 04_denoise
@@ -39,7 +50,9 @@ Input path: `$1` (a directory of raw lights, or a single stacked FITS).
 
 Throughout: after every step append to `REPORT.md` — the variants tried, the measured numbers,
 what was adopted, and **why** (or what the user chose at a stop). Carry the **adopted FITS
-forward** as the input to the next step.
+forward** as the input to the next step. **After every step (auto-adopt or stop), print to the
+user a one-line `validate here:` with the absolute path of the adopted FITS and the preview PNG**,
+so they can open any intermediate in Siril and check it before the pipeline moves on.
 
 ## The steps
 
@@ -52,7 +65,8 @@ binaries above, run its `measure_*.py`, generate the preview(s), then apply the 
 | 2 | `seestar-background-extraction-compare` | `02_background/` | GraXpert AI: colour cast < ~1% and **not** `BACKFIRED` | cast not pulled under ~1%, or every method backfired |
 | 3 | `seestar-deconvolution-compare` | `03_deconv/` | ring depth comfortably above the floor **AND** a clear FWHM gain | **default to STOP** on any doubt — borderline ring depth, marginal FWHM, or visible rings in the preview |
 | 4 | `seestar-denoise-compare` | `04_denoise/` | strongest setting with FWHM Δ < ~3% **and** faint_keep > ~0.85 | even the lowest strength over-blurs → propose **skip denoise** |
-| 5 | *(stretch — manual, no skill)* | `05_stretch/` | — | **always present** the final result (stretch is the user's call) |
+| 5 | *(plate-solve — Siril, no skill)* | `05_stretch/` | always solve the final master (skip if already `PLTSOLVD`) | **warn + continue** if the solve fails (e.g. no internet) — keep the unsolved master |
+| 6 | *(stretch — manual, no skill)* | `05_stretch/` | — | **always present** the final result (stretch is the user's call) |
 
 Notes per step:
 - **Step 1 (stack):** pick `experiment_reuse.ssf` if `process/r_pp_light_.seq` exists, else
@@ -65,11 +79,25 @@ Notes per step:
   trap step — measure **ring depth vs background**, not FWHM alone, and lean toward stopping.
   Reject mfdeconv / Cosmic Clarity.
 - **Step 4 (denoise):** use the skill's `denoise.py` runner (GraXpert denoise + header restore in
-  one step). Sweep ~0.3/0.5/0.8; deep stacks usually want ~0.3 or skip.
-- **Step 5 (stretch):** copy the final adopted **linear, header-complete** FITS to `05_stretch/`
-  (this is the deliverable for the user's own stretch / plate-solve / SPCC), and render a
-  stretched full-frame PNG with `tools/preview.py` as a visual deliverable. Do not auto-tune a
-  stretch.
+  one step). **Pass an absolute output path** (see Fixed facts). Sweep ~0.3/0.5/0.8; if even the
+  lowest over-blurs, re-sweep gentler (~0.15/0.2) before proposing skip. Deep stacks usually
+  want ~0.2–0.3 or skip.
+- **Step 5 (plate-solve):** copy the final adopted **linear, header-complete** FITS to
+  `05_stretch/<OBJECT>_final_solved.fit`, then plate-solve it in Siril **seeded by the header**
+  and **online** (queries the catalog; Seestar's RA/DEC + `FOCALLEN` + `XPIXSZ` make it fast):
+  ```
+  load <OBJECT>_final_solved
+  platesolve -focal=<FOCALLEN> -pixelsize=<XPIXSZ> -noflip
+  save <OBJECT>_final_solved
+  ```
+  Use **`-noflip`** — write WCS into the header, **do not rotate/flip pixels** (non-destructive;
+  WCS-aware viewers/SPCC orient North-up from the WCS). Siril prints "Image is already plate
+  solved. Nothing will be done." when `PLTSOLVD` is set (Siril's `-2pass` registration already
+  solves the stack and the WCS survives header-restore) — that's a fine no-op. If the solve
+  **fails** (e.g. no internet), warn the user and continue with the unsolved master.
+- **Step 6 (stretch):** the `05_stretch/<OBJECT>_final_solved.fit` is the deliverable for the
+  user's own stretch / SPCC (header + WCS intact). Render a stretched full-frame PNG with
+  `tools/preview.py` (no `--ref`) as a visual deliverable. Do **not** auto-tune a stretch.
 
 ## Previews
 
@@ -95,7 +123,30 @@ Even on an auto-adopt, drop a one-line note + the preview path so the user can g
 
 ## Finish
 
-When Step 5 is done, post a short summary: the per-step decisions, the final deliverable paths
-(`05_stretch/` FITS + stretched PNG), and the next manual steps (stretch curves, plate solve,
-SPCC — the FITS header is intact for these). Do **not** commit anything (image data is
-gitignored; the user commits skills/tools, not run outputs).
+When Step 6 is done, produce the publication deliverables, then summarize.
+
+1. **AstroBin acquisition CSV** (stacking mode only — needs the raw lights):
+   ```
+   .venv/bin/python tools/astrobin_session_csv.py <LIGHTS> \
+     --out 05_stretch/astrobin_acquisition.csv
+   ```
+   It groups subs into **observing nights** off the Seestar **local** filename timestamp
+   (`_YYYYMMDD-HHMMSS`, shifted −12 h so a night crossing local midnight stays one row — the
+   header `DATE-OBS` is UTC, so don't group on it). Auto-fills date/number/duration/binning/gain;
+   leaves `filter` blank (it needs the user's AstroBin numeric filter ID — tell them to set
+   `--filter-id`) and darks/flats/bias blank (Seestar calibrates on-device). Pass `--bortle/--sqm/
+   --fwhm` if the user gives them.
+2. **AstroBin title + description** → write `05_stretch/astrobin.txt`: a title (designation +
+   common name, e.g. `NGC 2070 — Tarantula Nebula (Caldwell 103)`) and a description with scope
+   (ZWO Seestar S30 / sensor / focal), total integration (subs × dur = hours, and stacked count
+   if it differs), date range, and the **actual processing chain you logged** (stack params →
+   GraXpert AI bg → Siril RL params → GraXpert denoise strength → plate-solved).
+3. **Copy the deliverables next to the input** so the user finds them with their data: into the
+   **parent of `LIGHTS/`** (stacking mode) or next to the input FITS (ready-stack mode):
+   `<OBJECT>_final_solved.fit`, `<OBJECT>_astrobin.txt`, `<OBJECT>_astrobin_acquisition.csv`,
+   `<OBJECT>_final_stretch.png`.
+
+Then post a short summary: the per-step decisions, the deliverable paths (run dir `05_stretch/`
+**and** the copies next to `lights/`), and the next manual steps (stretch curves, SPCC — header +
+WCS are intact). Do **not** commit anything (image data is gitignored; the user commits
+skills/tools, not run outputs).
