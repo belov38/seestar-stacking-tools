@@ -39,7 +39,7 @@ open sky). On crowded fields it fails — measure, don't assume. GraXpert AI is 
 ## Tools (in this skill dir)
 - `background.py INPUT.fits OUTPUT.fits [--smoothing 0.5] [--correction Subtraction|Division] [--cpu]`
   — **the runner**: runs the GraXpert AI background model on the **Apple-Silicon GPU** (CoreML,
-  output identical to GraXpert) via `tools/gpu/gx_gpu.py`, preserving the FITS header. No GraXpert
+  output identical to GraXpert) via `tools/gpu/gx_gpu.py`. No GraXpert
   install needed (see one-time setup below); `--cpu` runs on our own onnxruntime.
 - `subsky_compare.ssf` — optional Siril subsky variants, to confirm whether subsky backfires
   on your target.
@@ -53,7 +53,7 @@ open sky). On crowded fields it fails — measure, don't assume. GraXpert AI is 
 ```
 
 ## Workflow
-1. **AI background extraction** (the main path) — keeps the header, ready for plate solving / SPCC:
+1. **AI background extraction** (the main path) — ready for plate solving / SPCC:
    ```
    python background.py <stack.fits> bg_ai.fits --smoothing 0.5
    ```

@@ -34,7 +34,7 @@ blur, not lost stars). ~0.3 banks a real ~18% noise cut for <3% blur.
 ## Tools (in this skill dir)
 - `denoise.py INPUT.fits OUTPUT.fits [STRENGTH] [--cpu]` — **the runner**: denoises the GraXpert
   AI model on the **Apple-Silicon GPU** (CoreML, ~10× faster than CPU, output identical) via
-  `tools/gpu/gx_gpu.py`, preserving the FITS header in one step. Default strength 0.3. No GraXpert
+  `tools/gpu/gx_gpu.py`. Default strength 0.3. No GraXpert
   install needed (see one-time setup below); `--cpu` runs on our own onnxruntime.
 - `measure_denoise.py BASELINE.fit DENOISED...fit` — noise drop %, bright-star FWHM Δ (blur),
   faint-star retention; flags `OVER-DENOISED`, recommends the strongest clean setting. Needs
@@ -46,7 +46,7 @@ blur, not lost stars). ~0.3 banks a real ~18% noise cut for <3% blur.
 ```
 
 ## Workflow
-1. **Sweep strengths** with the runner (each writes a header-complete FITS). The GPU denoiser is
+1. **Sweep strengths** with the runner. The GPU denoiser is
    fast (~25-30 s/run), so sweep **broad in one pass** rather than 3 points — it costs little and
    the sweet spot for deep Seestar stacks is usually low (~0.15-0.3) where a coarse sweep skips it:
    ```
