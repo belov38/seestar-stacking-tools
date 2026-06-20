@@ -53,10 +53,11 @@ noisy data. Cost is star blur (FWHM), not lost faint stars → FWHM is the guard
 ## FITS headers
 
 Siril preserves the full FITS header (OBJECT, DATE-OBS, EXPTIME, INSTRUME, TELESCOP, FOCALLEN,
-XPIXSZ/YPIXSZ, RA/DEC, FILTER, GAIN…). **GraXpert strips it** to just NAXIS. After every
-GraXpert step run `tools/restore_fits_header.py SOURCE TARGET` (SOURCE = a header-bearing FITS
-like the Siril stack) so plate solving and SPCC/PCC keep their pointing/scale/filter hints.
-The Seestar header has RA/DEC + FOCALLEN + XPIXSZ but no WCS — enough to seed a plate solve.
+XPIXSZ/YPIXSZ, RA/DEC, FILTER, GAIN…). The GPU denoise/background runner (`tools/gpu/`) also
+copies the input header onto its output, so every pipeline step keeps OBJECT/RA/DEC/FOCALLEN/
+XPIXSZ/FILTER. (GraXpert's own CLI strips the header to NAXIS — another reason the pipeline uses
+the in-house runner instead.) The Seestar header has RA/DEC + FOCALLEN + XPIXSZ but no WCS —
+enough to seed a plate solve.
 
 ## Pipeline order
 

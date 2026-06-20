@@ -36,10 +36,9 @@ header-complete linear FITS plus a stretched PNG, ready for your own stretch / p
 
 ### tools/
 
-- `tools/restore_fits_header.py SOURCE TARGET` — **GraXpert strips the FITS header** (keeps
-  only NAXIS), losing OBJECT/RA/DEC/FOCALLEN/XPIXSZ/FILTER… Run this after every GraXpert step
-  to copy the metadata back from a header-bearing source (the Siril stack), so plate solving
-  and colour calibration (SPCC/PCC) keep their hints. Siril steps preserve headers themselves.
+- `tools/gpu/` — Apple-Silicon GPU runner (CoreML) for the GraXpert denoise & background
+  models, no GraXpert install needed. See `tools/gpu/README.md`. All pipeline steps preserve
+  the FITS header themselves.
 - `tools/preview.py RESULT.fits [--ref BEFORE.fits] [--out p.png]` — composite validation PNG:
   full-frame auto-stretch + bright-star zoom crops (reveal deconv rings / star colour) +
   optional before/after, all under one linked stretch. Used by `/seestar-pipeline` at each
