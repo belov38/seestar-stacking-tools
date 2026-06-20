@@ -47,15 +47,20 @@ bash ../../../tools/gpu/setup.sh
 ```
 
 ## Workflow
-1. **Sweep strengths** with the runner (each writes a header-complete FITS):
+1. **Sweep strengths** with the runner (each writes a header-complete FITS). The GPU denoiser is
+   fast (~25-30 s/run), so sweep **broad in one pass** rather than 3 points — it costs little and
+   the sweet spot for deep Seestar stacks is usually low (~0.15-0.3) where a coarse sweep skips it:
    ```
-   python denoise.py <stack.fits> dn03.fit 0.3
-   python denoise.py <stack.fits> dn05.fit 0.5
-   python denoise.py <stack.fits> dn08.fit 0.8
+   python denoise.py <stack.fits> dn01.fit  0.1
+   python denoise.py <stack.fits> dn015.fit 0.15
+   python denoise.py <stack.fits> dn02.fit  0.2
+   python denoise.py <stack.fits> dn03.fit  0.3
+   python denoise.py <stack.fits> dn05.fit  0.5
+   python denoise.py <stack.fits> dn08.fit  0.8
    ```
-   ~25-30 s/run on the GPU (add `--cpu` to run on our onnxruntime instead). The output keeps
+   (add `--cpu` to run on our onnxruntime instead). The output keeps
    OBJECT/RA/DEC/FOCALLEN/XPIXSZ/FILTER… from the input stack — ready for plate solving / SPCC.
-2. **Measure:** `python measure_denoise.py <baseline> dn03.fit dn05.fit dn08.fit`.
+2. **Measure:** `python measure_denoise.py <baseline> dn01.fit dn015.fit dn02.fit dn03.fit dn05.fit dn08.fit`.
 3. **Adopt** the recommended (strongest noise drop with FWHM Δ < ~3% and faint kept > ~0.85).
    If even the lowest strength over-blurs, the stack is already clean enough — skip denoise.
 
