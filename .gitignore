@@ -22,3 +22,6 @@ siril_experiment.log
 
 # Scratch inspection outputs (FITS for visual A/B; already covered by *.fit)
 out/
+
+# JetBrains IDE
+.idea/
