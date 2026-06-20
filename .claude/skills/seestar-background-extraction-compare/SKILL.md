@@ -37,30 +37,32 @@ Siril subsky is fine where clean background samples *can* be placed (sparse fiel
 open sky). On crowded fields it fails — measure, don't assume. GraXpert AI is the safe default.
 
 ## Tools (in this skill dir)
-- `prefs_ai.json` — GraXpert preferences template (AI mode, editable smoothing).
+- `background.py INPUT.fits OUTPUT.fits [--smoothing 0.5] [--correction Subtraction|Division] [--cpu]`
+  — **the runner**: runs the GraXpert AI background model on the **Apple-Silicon GPU** (CoreML,
+  output identical to GraXpert) via `tools/gpu/gx_gpu.py`, preserving the FITS header. No GraXpert
+  install needed (see one-time setup below); `--cpu` runs on our own onnxruntime.
 - `subsky_compare.ssf` — optional Siril subsky variants, to confirm whether subsky backfires
   on your target.
 - `measure_bg.py ORIGINAL.fit RESULT...fit` — residual gradient %, colour cast %, neg-pixel %,
   flags `BACKFIRED`/over-subtraction, recommends the flattest+neutral result. Needs
   `numpy`, `astropy`.
 
+**One-time setup** (builds the GPU venv + downloads models, no GraXpert required):
+```
+bash ../../../tools/gpu/setup.sh
+../../../tools/gpu/.venv/bin/python ../../../tools/gpu/fetch_models.py
+```
+
 ## Workflow
-1. **GraXpert AI** (the main path), headless:
+1. **AI background extraction** (the main path) — keeps the header, ready for plate solving / SPCC:
    ```
-   GraXpert -cli -cmd background-extraction -gpu false \
-     -preferences_file prefs_ai.json -output <out_prefix> <stack.fits>
+   python background.py <stack.fits> bg_ai.fits --smoothing 0.5
    ```
-   GraXpert binary (macOS): `/Applications/GraXpert.app/Contents/MacOS/GraXpert`. Writes
-   `<out_prefix>.fits`. `-gpu true` uses CoreML (the `E5RT … unbounded dimension` warnings are
-   non-fatal — it falls back to CPU and completes); `-gpu false` is the reliable default.
-   **GraXpert strips the FITS header** (keeps only NAXIS), so immediately restore it:
-   ```
-   python ../../../tools/restore_fits_header.py <stack.fits> <out_prefix>.fits
-   ```
-   This puts back OBJECT/RA/DEC/FOCALLEN/XPIXSZ/FILTER… needed for plate solving and SPCC.
+   `--smoothing` 0.0 (follow data) → 1.0 (very smooth); ~0.5 is a good default. AI mode needs no
+   sample grid and is the safe default on crowded Seestar fields.
 2. **(optional) Siril subsky** for comparison: `siril-cli -d <workdir> -s subsky_compare.ssf`
    (needs `stack.fit` in the workdir). Confirms backfire on crowded fields.
-3. **Measure:** `python measure_bg.py <stack> <graxpert_out>.fits <subsky_out>.fit ...`.
+3. **Measure:** `python measure_bg.py <stack> bg_ai.fits <subsky_out>.fit ...`.
 4. **Adopt** the recommended result (flat + neutral, not backfired/over-subtracted).
 
 ## Choosing parameters (GraXpert prefs JSON)

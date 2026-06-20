@@ -1,68 +1,43 @@
 #!/usr/bin/env python3
-"""Denoise a Seestar stack with GraXpert and emit a FITS WITH its header intact.
+"""Denoise a Seestar stack on the Apple-Silicon GPU (CoreML), header preserved.
 
-GraXpert strips the FITS header to NAXIS only; this wrapper runs the denoise and then
-restores OBJECT/RA/DEC/FOCALLEN/XPIXSZ/FILTER… from the input, so the output is ready for
-plate solving / SPCC in one step.
+Thin wrapper over tools/gpu/gx_gpu.py. No GraXpert install needed — the ONNX models are
+fetched from the GitHub release by tools/gpu/fetch_models.py. The output keeps the input
+FITS header (OBJECT/RA/DEC/FOCALLEN/XPIXSZ/FILTER…) for plate solving / SPCC.
 
 Usage:
-  denoise.py INPUT.fits OUTPUT.fits [STRENGTH] [--gpu]
-    STRENGTH  GraXpert denoise_strength 0.0-1.0 (default 0.3).
-    --gpu     use CoreML GPU (default CPU, which is the reliable path on macOS).
+  denoise.py INPUT.fits OUTPUT.fits [STRENGTH] [--cpu]
+    STRENGTH  denoise strength 0.0-1.0 (default 0.3).
+    --cpu     run on CPU (our onnxruntime) instead of the GPU.
 
-Env:
-  GRAXPERT_BIN  override the GraXpert binary
-                (default /Applications/GraXpert.app/Contents/MacOS/GraXpert).
-
-Needs: astropy (for the header restore). GraXpert installed.
+Setup (once):
+  bash tools/gpu/setup.sh
+  tools/gpu/.venv/bin/python tools/gpu/fetch_models.py
 """
-import sys, os, re, json, subprocess, tempfile
+import sys, os, subprocess
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, "..", "..", "..", "tools"))
-from restore_fits_header import restore   # noqa: E402
-
-GRAXPERT = os.environ.get(
-    "GRAXPERT_BIN", "/Applications/GraXpert.app/Contents/MacOS/GraXpert")
+REPO = os.path.normpath(os.path.join(HERE, "..", "..", ".."))
+GPU_PY = os.path.join(REPO, "tools", "gpu", ".venv", "bin", "python")
+GPU_CLI = os.path.join(REPO, "tools", "gpu", "gx_gpu.py")
 
 
 def main():
-    args = [a for a in sys.argv[1:] if a != "--gpu"]
-    use_gpu = "--gpu" in sys.argv
+    args = [a for a in sys.argv[1:] if a != "--cpu"]
+    cpu = "--cpu" in sys.argv
     if len(args) < 2:
         print(__doc__); sys.exit(1)
     inp, out = args[0], args[1]
-    strength = float(args[2]) if len(args) > 2 else 0.3
-
+    strength = args[2] if len(args) > 2 else "0.3"
     if not os.path.exists(inp):
         sys.exit(f"input not found: {inp}")
-    if not os.path.exists(GRAXPERT):
-        sys.exit(f"GraXpert not found: {GRAXPERT} (set GRAXPERT_BIN)")
-
-    # GraXpert appends .fits to the -output prefix; work in a temp prefix then move.
-    prefix = re.sub(r"\.(fits?|fts)$", "", out, flags=re.I)
-    produced = prefix + ".fits"
-
-    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as pf:
-        json.dump({"denoise_strength": strength}, pf)
-        prefs = pf.name
-
-    try:
-        cmd = [GRAXPERT, "-cli", "-cmd", "denoising",
-               "-gpu", "true" if use_gpu else "false",
-               "-preferences_file", prefs, "-output", prefix, inp]
-        print(f"[denoise] strength={strength} gpu={use_gpu} -> {produced}", flush=True)
-        r = subprocess.run(cmd, capture_output=True, text=True)
-        if r.returncode != 0 or not os.path.exists(produced):
-            sys.stderr.write(r.stdout[-2000:] + r.stderr[-2000:])
-            sys.exit(f"GraXpert failed (rc={r.returncode}); no {produced}")
-    finally:
-        os.unlink(prefs)
-
-    n = restore(inp, produced)
-    if produced != out:
-        os.replace(produced, out)
-    print(f"[denoise] done: {out}  (+{n} header cards restored)")
+    if not os.path.exists(GPU_PY):
+        sys.exit("GPU venv missing — run: bash tools/gpu/setup.sh && "
+                 "tools/gpu/.venv/bin/python tools/gpu/fetch_models.py")
+    cmd = [GPU_PY, GPU_CLI, "denoise", inp, out, "--strength", str(strength)]
+    if cpu:
+        cmd.append("--cpu")
+    sys.exit(subprocess.run(cmd).returncode)
 
 
 if __name__ == "__main__":

@@ -16,14 +16,14 @@ Input path: `$1` (a directory of raw lights, or a single stacked FITS).
 
 - Python: `.venv/bin/python` (has astropy, numpy, sep, scipy, Pillow).
 - Siril CLI: `/Applications/Siril.app/Contents/MacOS/siril-cli`
-- GraXpert CLI: `/Applications/GraXpert.app/Contents/MacOS/GraXpert`
+- Background + denoise run on the **Apple-Silicon GPU** via `tools/gpu/` (CoreML, no GraXpert
+  install). One-time: `bash tools/gpu/setup.sh && tools/gpu/.venv/bin/python tools/gpu/fetch_models.py`.
+  The skill runners `background.py` / `denoise.py` wrap it and preserve the FITS header.
 - AstroBin session CSV: `tools/astrobin_session_csv.py` (scans lights, emits the import CSV).
 - Pipeline order is fixed: **stack → background extraction → deconvolution → denoise →
   plate-solve → stretch**. Deconv and denoise run on **linear** data; denoise comes after deconv;
   plate-solve runs on the final linear master.
-- **GraXpert writes its output path relative to the *input* file's directory** — always pass an
-  **absolute** output path to GraXpert / `denoise.py`, or the save silently fails (rc=1 after
-  "Finished denoising") with a doubled path.
+- Pass an **absolute** output path to the runners to avoid any cwd ambiguity.
 - Each step is a skill with a `measure_*.py` that prints a verdict — trust the numbers, but the
   **stop rules below override blind adoption** (FWHM once fooled us into adopting deconv donuts).
 
@@ -72,16 +72,14 @@ Notes per step:
 - **Step 1 (stack):** pick `experiment_reuse.ssf` if `process/r_pp_light_.seq` exists, else
   `experiment_full.ssf`; choose variants by frame count + target type (the skill's table). The
   adopted stack is the colour-correct base (equalized RGB) — do **not** substitute a raw mean.
-- **Step 2 (background):** GraXpert strips the header — the skill restores it
-  (`tools/restore_fits_header.py`). GraXpert AI is the default; subsky usually backfires on star
-  fields.
+- **Step 2 (background):** the skill's `background.py` runs the GraXpert AI model on the GPU and
+  preserves the header. AI is the default; subsky usually backfires on star fields.
 - **Step 3 (deconv):** Siril RL (~10 it, optional `-tv`); `makepsf stars` first. This is the
   trap step — measure **ring depth vs background**, not FWHM alone, and lean toward stopping.
   Reject mfdeconv / Cosmic Clarity.
-- **Step 4 (denoise):** use the skill's `denoise.py` runner (GraXpert denoise + header restore in
-  one step). **Pass an absolute output path** (see Fixed facts). Sweep ~0.3/0.5/0.8; if even the
-  lowest over-blurs, re-sweep gentler (~0.15/0.2) before proposing skip. Deep stacks usually
-  want ~0.2–0.3 or skip.
+- **Step 4 (denoise):** use the skill's `denoise.py` runner (GPU denoise, header preserved, ~25s).
+  **Pass an absolute output path.** Sweep ~0.3/0.5/0.8; if even the lowest over-blurs, re-sweep
+  gentler (~0.15/0.2) before proposing skip. Deep stacks usually want ~0.2–0.3 or skip.
 - **Step 5 (plate-solve):** copy the final adopted **linear, header-complete** FITS to
   `05_stretch/<OBJECT>_final_solved.fit`, then plate-solve it in Siril **seeded by the header**
   and **online** (queries the catalog; Seestar's RA/DEC + `FOCALLEN` + `XPIXSZ` make it fast):
