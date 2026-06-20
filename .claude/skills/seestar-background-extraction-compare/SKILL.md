@@ -47,10 +47,9 @@ open sky). On crowded fields it fails — measure, don't assume. GraXpert AI is 
   flags `BACKFIRED`/over-subtraction, recommends the flattest+neutral result. Needs
   `numpy`, `astropy`.
 
-**One-time setup** (builds the GPU venv + downloads models, no GraXpert required):
+**One-time setup** (downloads models into the root venv, no GraXpert required):
 ```
-bash ../../../tools/gpu/setup.sh
-../../../tools/gpu/.venv/bin/python ../../../tools/gpu/fetch_models.py
+../../../.venv/bin/python ../../../tools/gpu/fetch_models.py
 ```
 
 ## Workflow

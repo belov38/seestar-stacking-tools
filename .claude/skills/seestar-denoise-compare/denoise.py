@@ -10,15 +10,13 @@ Usage:
     STRENGTH  denoise strength 0.0-1.0 (default 0.3).
     --cpu     run on CPU (our onnxruntime) instead of the GPU.
 
-Setup (once):
-  bash tools/gpu/setup.sh
-  tools/gpu/.venv/bin/python tools/gpu/fetch_models.py
+Setup (once): build the root venv (see README), then
+  .venv/bin/python tools/gpu/fetch_models.py
 """
 import sys, os, subprocess
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.normpath(os.path.join(HERE, "..", "..", ".."))
-GPU_PY = os.path.join(REPO, "tools", "gpu", ".venv", "bin", "python")
 GPU_CLI = os.path.join(REPO, "tools", "gpu", "gx_gpu.py")
 
 
@@ -31,10 +29,7 @@ def main():
     strength = args[2] if len(args) > 2 else "0.3"
     if not os.path.exists(inp):
         sys.exit(f"input not found: {inp}")
-    if not os.path.exists(GPU_PY):
-        sys.exit("GPU venv missing — run: bash tools/gpu/setup.sh && "
-                 "tools/gpu/.venv/bin/python tools/gpu/fetch_models.py")
-    cmd = [GPU_PY, GPU_CLI, "denoise", inp, out, "--strength", str(strength)]
+    cmd = [sys.executable, GPU_CLI, "denoise", inp, out, "--strength", str(strength)]
     if cpu:
         cmd.append("--cpu")
     sys.exit(subprocess.run(cmd).returncode)

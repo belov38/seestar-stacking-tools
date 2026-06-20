@@ -26,8 +26,8 @@ Not for: undersampled targets where you already know the answer is "skip" (use j
 the gain is always small on S30); per-frame deconvolution (never deconvolve single subs).
 
 ## Use Siril RL — not mfdeconv / Seti tools
-SASpro **mfdeconv** and Cosmic Clarity were evaluated and **rejected** for S30 (see
-`deconv/FINDINGS.md`): mfdeconv estimates the PSF per-frame (wider than the stacked stars) →
+SASpro **mfdeconv** and Cosmic Clarity were evaluated and **rejected** for S30: mfdeconv
+estimates the PSF per-frame (wider than the stacked stars) →
 over-deconvolves → black rings 80–150× RMS below background on every bright star, even at low
 iterations. Cosmic Clarity is deprecated. **Siril `makepsf stars` measures the PSF from the
 stack itself**, so it matches the real star size and stays clean. Denoise is a separate step

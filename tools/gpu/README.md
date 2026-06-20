@@ -11,7 +11,8 @@ CoreML `MLProgram + ALL` compute units. On Apple Silicon that combo **crashes** 
 compiler (Neural-Engine respecialization abort) or silently falls back to CPU. The fix is
 three things together:
 
-1. **onnxruntime ≥ 1.20** (needs Python ≥ 3.10) — exposes the CoreML provider options.
+1. **onnxruntime ≥ 1.20** (needs Python ≥ 3.10 — why the root venv is python3.13) — exposes
+   the CoreML provider options.
 2. CoreML `ModelFormat=MLProgram` + `MLComputeUnits=CPUAndGPU` (GPU, **skip the Neural Engine**).
 3. The model's batch dimension **frozen** to a static `[1,256,256,3]` shape.
 
@@ -20,8 +21,8 @@ With all three, CoreML loads cleanly and runs on the GPU.
 ## Setup (once)
 
 ```
-bash tools/gpu/setup.sh                                  # build py3.13 venv (ORT 1.27)
-tools/gpu/.venv/bin/python tools/gpu/fetch_models.py     # download frozen models
+# build the root venv first (see ../../README.md), then:
+.venv/bin/python tools/gpu/fetch_models.py     # download frozen models
 ```
 
 `fetch_models.py` pulls the frozen `.onnx` from this repo's `models-v1` GitHub release
@@ -31,9 +32,9 @@ its data dir and frozen on first use instead.
 ## Usage
 
 ```
-tools/gpu/.venv/bin/python tools/gpu/gx_gpu.py denoise    IN.fits OUT.fits [--strength 0.3] [--cpu]
-tools/gpu/.venv/bin/python tools/gpu/gx_gpu.py background  IN.fits OUT.fits [--smoothing 0.5] \
-                                                          [--correction Subtraction|Division] [--cpu]
+.venv/bin/python tools/gpu/gx_gpu.py denoise    IN.fits OUT.fits [--strength 0.3] [--cpu]
+.venv/bin/python tools/gpu/gx_gpu.py background  IN.fits OUT.fits [--smoothing 0.5] \
+                                                [--correction Subtraction|Division] [--cpu]
 ```
 
 `--cpu` runs on our own onnxruntime (still no GraXpert). The original FITS header is preserved.

@@ -14,11 +14,11 @@ Input path: `$1` (a directory of raw lights, or a single stacked FITS).
 
 ## Fixed facts (don't re-derive)
 
-- Python: `.venv/bin/python` (has astropy, numpy, sep, scipy, Pillow).
+- Python: `.venv/bin/python` (python3.13; astropy, numpy, sep, scipy, Pillow, onnxruntime).
 - Siril CLI: `/Applications/Siril.app/Contents/MacOS/siril-cli`
 - Background + denoise run on the **Apple-Silicon GPU** via `tools/gpu/` (CoreML, no GraXpert
-  install). One-time: `bash tools/gpu/setup.sh && tools/gpu/.venv/bin/python tools/gpu/fetch_models.py`.
-  The skill runners `background.py` / `denoise.py` wrap it and preserve the FITS header.
+  install). One-time: `.venv/bin/python tools/gpu/fetch_models.py`.
+  The skill runners `background.py` / `denoise.py` wrap it.
 - AstroBin session CSV: `tools/astrobin_session_csv.py` (scans lights, emits the import CSV).
 - Processing order is **physically fixed**: stack → background extraction → deconvolution →
   denoise → plate-solve → stretch. Deconv and denoise run on **linear** data; denoise comes after
@@ -101,12 +101,12 @@ Notes per step:
   in Step 1), else `experiment_full.ssf`; choose variants by frame count + target type (the skill's
   table). The adopted stack is the colour-correct base (equalized RGB) — do **not** substitute a raw
   mean.
-- **Step 4 (background):** the skill's `background.py` runs the GraXpert AI model on the GPU and
-  preserves the header. AI is the default; subsky usually backfires on star fields.
+- **Step 4 (background):** the skill's `background.py` runs the GraXpert AI model on the GPU.
+  AI is the default; subsky usually backfires on star fields.
 - **Step 5 (deconv):** Siril RL (~10 it, optional `-tv`); `makepsf stars` first. This is the
   trap step — measure **ring depth vs background**, not FWHM alone, and lean toward stopping.
   Reject mfdeconv / Cosmic Clarity.
-- **Step 6 (denoise):** use the skill's `denoise.py` runner (GPU denoise, header preserved, ~25s).
+- **Step 6 (denoise):** use the skill's `denoise.py` runner (GPU denoise, ~25s).
   **Pass an absolute output path.** The denoiser is fast, so sweep **broad in one pass** —
   ~0.1 / 0.15 / 0.2 / 0.3 / 0.5 / 0.8 — render a preview per variant, and pick by measurement. Deep
   stacks usually want ~0.15–0.3 or skip; if even the lowest over-blurs, propose skip denoise.

@@ -40,10 +40,9 @@ blur, not lost stars). ~0.3 banks a real ~18% noise cut for <3% blur.
   faint-star retention; flags `OVER-DENOISED`, recommends the strongest clean setting. Needs
   `numpy`, `astropy`, `sep`, `scipy`.
 
-**One-time setup** (builds the GPU venv + downloads models, no GraXpert required):
+**One-time setup** (downloads models into the root venv, no GraXpert required):
 ```
-bash ../../../tools/gpu/setup.sh
-../../../tools/gpu/.venv/bin/python ../../../tools/gpu/fetch_models.py
+../../../.venv/bin/python ../../../tools/gpu/fetch_models.py
 ```
 
 ## Workflow

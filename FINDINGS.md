@@ -32,7 +32,7 @@ cast** (per-channel 4.7% → 0.1%). On S30 the dominant problem is the cast, not
 cluster leaves no clean sky, so it fits a garbage plane and *adds* a 20–35% gradient. subsky is
 only safe where clean samples can be placed (sparse field / open-sky nebula).
 
-## 3. Deconvolution — `seestar-deconvolution-compare` (detail in `deconv/FINDINGS.md`)
+## 3. Deconvolution — `seestar-deconvolution-compare`
 
 Use **Siril RL (~10 iters, optional `-tv`)**: real, clean −5% bright-star FWHM, no ringing,
 seconds. `makepsf stars` measures the PSF from the stack so it matches the ~2.8 px stars.

@@ -9,15 +9,13 @@ Usage:
   background.py INPUT.fits OUTPUT.fits [--smoothing 0.5] [--correction Subtraction|Division] [--cpu]
     --cpu   run on CPU (our onnxruntime) instead of the GPU.
 
-Setup (once):
-  bash tools/gpu/setup.sh
-  tools/gpu/.venv/bin/python tools/gpu/fetch_models.py
+Setup (once): build the root venv (see README), then
+  .venv/bin/python tools/gpu/fetch_models.py
 """
 import sys, os, subprocess
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.normpath(os.path.join(HERE, "..", "..", ".."))
-GPU_PY = os.path.join(REPO, "tools", "gpu", ".venv", "bin", "python")
 GPU_CLI = os.path.join(REPO, "tools", "gpu", "gx_gpu.py")
 
 
@@ -41,10 +39,7 @@ def main():
     inp, out = pos[0], pos[1]
     if not os.path.exists(inp):
         sys.exit(f"input not found: {inp}")
-    if not os.path.exists(GPU_PY):
-        sys.exit("GPU venv missing — run: bash tools/gpu/setup.sh && "
-                 "tools/gpu/.venv/bin/python tools/gpu/fetch_models.py")
-    cmd = [GPU_PY, GPU_CLI, "background", inp, out,
+    cmd = [sys.executable, GPU_CLI, "background", inp, out,
            "--smoothing", str(smoothing), "--correction", correction]
     if cpu:
         cmd.append("--cpu")

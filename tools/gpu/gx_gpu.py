@@ -22,7 +22,7 @@ Usage:
 Options:
   --cpu   run on CPU with the original dynamic model (for A/B comparison).
 
-Needs (in the venv built by setup.sh): onnxruntime>=1.20, numpy, astropy,
+Needs (in the root venv, see README): onnxruntime>=1.20, numpy, astropy,
 scikit-image, opencv-python-headless.
 """
 import argparse
