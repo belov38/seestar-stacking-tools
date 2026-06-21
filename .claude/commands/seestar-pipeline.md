@@ -1,5 +1,5 @@
 ---
-description: Run a Seestar S30 frame through the full processing pipeline (explore → stack → background → deconv → denoise → plate-solve → stretch), auto-picking parameters by measurement, stopping only when a choice is doubtful, and emitting AstroBin title/description + acquisition CSV.
+description: Run a Seestar S30 frame through the full processing pipeline (explore → stack → background → deconv → denoise → plate-solve → stretch), auto-picking parameters by measurement, stopping only when a choice is doubtful, emitting AstroBin title/description + acquisition CSV, and offering an optional cleanup of intermediate files at the end.
 argument-hint: <lights-dir | stack.fits>
 ---
 
@@ -183,3 +183,29 @@ Then post a short summary: the per-step decisions, the deliverable paths (run di
 **and** the copies in `DATADIR`), and the next manual steps (stretch curves, SPCC — header + WCS
 are intact). Do **not** commit anything (image data is gitignored; the user commits skills/tools,
 not run outputs).
+
+## Step 9 — Offer cleanup (optional; last action; never automatic)
+
+The pipeline deliberately leaves a `.fit` + `.png` at **every** stage so the user can resume
+manually from any step — deleting those throws that away, so **never prune on your own**. As the
+final action, *offer* to reclaim disk by removing the heavy intermediates, and act only on an
+explicit confirmation.
+
+1. **Size the prunable set** so the offer carries a real number:
+   ```
+   du -sh "$RUN"/{01_stack,02_background,03_deconv,04_denoise,previews} "$RUN"
+   ```
+2. **State exactly what stays vs goes:**
+   - **Keep:** `05_stretch/` (final solved FITS, stretched PNG, `astrobin.txt`,
+     `astrobin_acquisition.csv`), `REPORT.md`, and the four deliverable **copies in `DATADIR`**.
+   - **Remove:** `01_stack/`, `02_background/`, `03_deconv/`, `04_denoise/`, `previews/`.
+   - **Never touch:** the user's source lights and `<lights>/_jpg_aside/` — those are the user's
+     own originals, not pipeline output.
+3. **Ask a yes/no question** with the measured size (e.g. "Permanently delete the intermediates
+   and reclaim ~1.4 GB? `05_stretch/` + `REPORT.md` + the `DATADIR` copies are kept; this can't be
+   undone"). **Wait** for the answer.
+4. On **yes**, permanently remove only those five paths:
+   ```
+   rm -rf "$RUN"/{01_stack,02_background,03_deconv,04_denoise,previews}
+   ```
+   then confirm what was freed and what remains. On **no**, leave everything untouched and say so.
