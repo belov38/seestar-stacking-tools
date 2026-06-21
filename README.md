@@ -1,5 +1,25 @@
 # Seestar processing tools
 
+## Why
+
+The Seestar app gives you a quick live-stacked preview — but it's dim, low-contrast, and
+carries a strong colour cast, so most of the signal you actually captured stays buried. This
+toolkit re-processes the *same* sub-frames step by step, measuring each step objectively, to
+recover the detail and colour that are already in the data.
+
+Same target (C103 / NGC 2070, the Tarantula Nebula), same Seestar frames:
+
+| Seestar app output | This pipeline (auto master) | After final stretch |
+|:--:|:--:|:--:|
+| <img src="img/c103/seestar-raw.jpg" height="320" alt="Raw Seestar in-app preview"> | <img src="img/c103/pipeline-auto.jpg" height="320" alt="Pipeline automatic linear master with star-zoom QA crops"> | <img src="img/c103/final-postprocessed.jpg" height="320" alt="Final hand-stretched result"> |
+| straight out of the app | `/seestar-pipeline` output: plate-solved linear master + star-zoom QA crops | manual stretch on top of the pipeline master |
+
+**References:** [ZWO Seestar](https://www.seestar.com/) ·
+[Tarantula Nebula / NGC 2070](https://en.wikipedia.org/wiki/Tarantula_Nebula) ·
+[Siril](https://siril.org/) · [GraXpert](https://www.graxpert.com/)
+
+## What it is
+
 Tools for post-processing ZWO Seestar (S30, IMX585, GRBG) deep-sky FITS, built as a set
 of **measure-and-compare** skills: for each step, run a few variants, measure the result
 objectively, and adopt the best — or keep the baseline if nothing wins cleanly.

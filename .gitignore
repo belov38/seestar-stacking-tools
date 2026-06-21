@@ -14,6 +14,9 @@ __pycache__/
 *.jpg
 *.jpeg
 
+# Exception: README image assets in img/ are version-controlled (example galleries)
+!img/**
+
 # Siril working/output
 process/
 metrics.csv
