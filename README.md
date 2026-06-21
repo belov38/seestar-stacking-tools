@@ -9,10 +9,12 @@ recover the detail and colour that are already in the data.
 
 Same target (C103 / NGC 2070, the Tarantula Nebula), same Seestar frames:
 
-| Seestar app output | This pipeline (auto master) | After final stretch |
-|:--:|:--:|:--:|
-| <img src="img/c103/seestar-raw.jpg" height="320" alt="Raw Seestar in-app preview"> | <img src="img/c103/pipeline-auto.jpg" height="320" alt="Pipeline automatic linear master with star-zoom QA crops"> | <img src="img/c103/final-postprocessed.jpg" height="320" alt="Final hand-stretched result"> |
-| straight out of the app | `/seestar-pipeline` output: plate-solved linear master + star-zoom QA crops | manual stretch on top of the pipeline master |
+<p align="center">
+  <img src="img/c103/seestar-raw.jpg" height="340" alt="Raw Seestar in-app preview">
+  <img src="img/c103/pipeline-auto.jpg" height="340" alt="Pipeline automatic linear master with star-zoom QA crops">
+  <img src="img/c103/final-postprocessed.jpg" height="340" alt="Final hand-stretched result">
+</p>
+<p align="center"><sub><b>Left → right</b> (stacks top → bottom on narrow screens): straight out of the Seestar app · <code>/seestar-pipeline</code> auto linear master + star-zoom QA crops · final manual stretch</sub></p>
 
 **References:** [ZWO Seestar](https://www.seestar.com/) ·
 [Tarantula Nebula / NGC 2070](https://en.wikipedia.org/wiki/Tarantula_Nebula) ·
