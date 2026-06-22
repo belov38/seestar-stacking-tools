@@ -7,17 +7,27 @@ carries a strong colour cast, so most of the signal you actually captured stays 
 toolkit re-processes the *same* sub-frames step by step, measuring each step objectively, to
 recover the detail and colour that are already in the data.
 
-Same target (C92 / NGC 3372, the Carina Nebula), same Seestar frames:
+Two targets, same Seestar frames — **left → right** (stacks top → bottom on narrow screens):
+straight out of the Seestar app · <code>/seestar-pipeline</code> auto linear master + star-zoom QA
+crops · final manual stretch.
 
 <p align="center">
   <img src="img/c92/seestar-raw.jpg" height="340" alt="Raw Seestar in-app preview">
   <img src="img/c92/pipeline-auto.png" height="340" alt="Pipeline automatic linear master with star-zoom QA crops">
   <img src="img/c92/final-postprocessed.jpg" height="340" alt="Final hand-stretched result">
 </p>
-<p align="center"><sub><b>Left → right</b> (stacks top → bottom on narrow screens): straight out of the Seestar app · <code>/seestar-pipeline</code> auto linear master + star-zoom QA crops · final manual stretch</sub></p>
+<p align="center"><sub><b>C92 / NGC 3372 — Carina Nebula</b></sub></p>
+
+<p align="center">
+  <img src="img/c103/seestar-raw.jpg" height="340" alt="Raw Seestar in-app preview">
+  <img src="img/c103/pipeline-auto.jpg" height="340" alt="Pipeline automatic linear master with star-zoom QA crops">
+  <img src="img/c103/final-postprocessed.jpg" height="340" alt="Final hand-stretched result">
+</p>
+<p align="center"><sub><b>C103 / NGC 2070 — Tarantula Nebula</b></sub></p>
 
 **References:** [ZWO Seestar](https://www.seestar.com/) ·
 [Carina Nebula / NGC 3372](https://en.wikipedia.org/wiki/Carina_Nebula) ·
+[Tarantula Nebula / NGC 2070](https://en.wikipedia.org/wiki/Tarantula_Nebula) ·
 [Siril](https://siril.org/) · [GraXpert](https://www.graxpert.com/)
 
 ## What it is
