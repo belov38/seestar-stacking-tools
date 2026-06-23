@@ -38,9 +38,11 @@ objectively, and adopt the best — or keep the baseline if nothing wins cleanly
 
 Findings live in [`FINDINGS.md`](FINDINGS.md), versioned in this repo.
 
-## TL;DR — install with your AI coding tool
+## TL;DR — install with Claude Code
 
-macOS only. Paste this into an AI coding agent (Claude Code, Cursor, etc.) and let it drive:
+macOS only. This toolkit is built around [Claude Code](https://www.claude.com/product/claude-code)
+and its skills — use Claude Code, not other AI coding tools. Paste this into Claude Code and let
+it drive:
 
 ```
 Install this on my Mac. Fetch this URL and follow its "Automated install (LLM agent
@@ -49,9 +51,9 @@ any system install or starring:
 https://raw.githubusercontent.com/belov38/seestar-stacking-tools/refs/heads/main/README.md
 ```
 
-The agent will check Homebrew / Python 3.13 / Siril, clone the repo, build the venv, fetch
-the GPU models, and verify the install. When it finishes: `cd` into the clone, open your AI
-tool there, and run `/seestar-pipeline <lights-dir | stack.fits>`.
+Claude Code will check Homebrew / Python 3.13 / Siril, clone the repo, build the venv, fetch
+the GPU models, and verify the install. When it finishes: `cd` into the clone, open Claude Code
+there, and run `/seestar-pipeline <lights-dir | stack.fits>`.
 
 > **LLM agents installing this:** follow the **Automated install** section below verbatim,
 > top to bottom. macOS only (Apple Silicon). Probe before you install; re-running is safe.
