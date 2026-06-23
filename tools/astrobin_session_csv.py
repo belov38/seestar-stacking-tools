@@ -17,9 +17,10 @@ plus `--utc-offset-hours`.
 Columns (https://welcome.astrobin.com/importing-acquisitions-from-csv):
     date,filter,number,duration,iso,binning,gain,sensorCooling,fNumber,
     darks,flats,flatDarks,bias,bortle,meanSqm,meanFwhm,temperature
-Only `number` and `duration` are mandatory. `filter` is an AstroBin numeric filter ID
-(left blank unless --filter-id is given). Seestar calibrates on-device, so
-darks/flats/bias are left blank rather than asserting 0.
+Only `number` and `duration` are mandatory. `filter` is an AstroBin numeric filter ID;
+it defaults to the Seestar's fixed integrated LP filter (override with --filter-id, or
+--filter-id 0 to leave it blank). Seestar calibrates on-device, so darks/flats/bias are
+left blank rather than asserting 0.
 
 Usage:
     astrobin_session_csv.py <lights-dir> [--out FILE] [--night-shift-hours 12]
@@ -42,6 +43,11 @@ COLUMNS = [
     "sensorCooling", "fNumber", "darks", "flats", "flatDarks", "bias",
     "bortle", "meanSqm", "meanFwhm", "temperature",
 ]
+
+# AstroBin equipment-DB ID for the Seestar's fixed integrated LP filter
+# (https://app.astrobin.com/equipment/explorer/filter/40954/zwo-seestar-s30-pro-integrated-lp-filter).
+# The filter is built into the scope, so this is a constant for every Seestar session.
+SEESTAR_LP_FILTER_ID = 40954
 
 # Seestar local timestamp in the filename, e.g. Light_C 103_30.0s_LP_20260617-205453.fit
 _FNAME_TS = re.compile(r"_(\d{8})-(\d{6})\.fit$", re.IGNORECASE)
@@ -124,7 +130,7 @@ def build_rows(sessions, args):
             sensor_cooling = str(round(sum(ccd) / len(ccd)))
         rows.append({
             "date": night,
-            "filter": str(args.filter_id) if args.filter_id is not None else "",
+            "filter": str(args.filter_id) if args.filter_id else "",
             "number": str(s["n"]),
             "duration": _num(_mode(s["exptime"])),
             "iso": "",
@@ -150,8 +156,10 @@ def main(argv=None):
                     help="hours to subtract from local time before taking the night date (default 12)")
     ap.add_argument("--utc-offset-hours", type=float, default=0.0,
                     help="offset added to DATE-OBS when filename has no local timestamp")
-    ap.add_argument("--filter-id", type=int, default=None,
-                    help="AstroBin numeric filter ID (from the filter's equipment URL)")
+    ap.add_argument("--filter-id", type=int, default=SEESTAR_LP_FILTER_ID,
+                    help=f"AstroBin numeric filter ID from the filter's equipment URL "
+                         f"(default {SEESTAR_LP_FILTER_ID}, the Seestar integrated LP filter; "
+                         f"pass 0 to leave blank)")
     ap.add_argument("--bortle", type=int, default=None)
     ap.add_argument("--sqm", type=float, default=None)
     ap.add_argument("--fwhm", type=float, default=None)
@@ -185,9 +193,12 @@ def main(argv=None):
     print(f"\n[astrobin-csv] {len(rows)} session(s), {total_subs} subs, "
           f"{total_h:.2f} h total" + (f"  (skipped {skipped})" if skipped else ""),
           file=sys.stderr)
-    if args.filter_id is None:
-        print("[astrobin-csv] NOTE: 'filter' left blank — set the AstroBin numeric "
-              "filter ID with --filter-id (from the filter's equipment-DB URL).",
+    if args.filter_id:
+        print(f"[astrobin-csv] filter ID {args.filter_id} "
+              f"(Seestar integrated LP filter; override with --filter-id).",
+              file=sys.stderr)
+    else:
+        print("[astrobin-csv] NOTE: 'filter' left blank (--filter-id 0).",
               file=sys.stderr)
     if args.out:
         print(f"[astrobin-csv] written: {args.out}", file=sys.stderr)

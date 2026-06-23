@@ -193,9 +193,9 @@ When Step 9 is done, produce the publication deliverables, then summarize.
    It groups subs into **observing nights** off the Seestar **local** filename timestamp
    (`_YYYYMMDD-HHMMSS`, shifted −12 h so a night crossing local midnight stays one row — the
    header `DATE-OBS` is UTC, so don't group on it). Auto-fills date/number/duration/binning/gain;
-   leaves `filter` blank (it needs the user's AstroBin numeric filter ID — tell them to set
-   `--filter-id`) and darks/flats/bias blank (Seestar calibrates on-device). Pass `--bortle/--sqm/
-   --fwhm` if the user gives them.
+   `filter` defaults to the Seestar integrated LP filter (AstroBin ID 40954 — override with
+   `--filter-id N`, or `--filter-id 0` to leave blank) and darks/flats/bias stay blank (Seestar
+   calibrates on-device). Pass `--bortle/--sqm/--fwhm` if the user gives them.
 2. **AstroBin title + description** → write `05_stretch/astrobin.txt`: a title (designation +
    common name, e.g. `NGC 2070 — Tarantula Nebula (Caldwell 103)`) and a description with scope
    (ZWO Seestar S30 / sensor / focal), total integration (subs × dur = hours, and stacked count
