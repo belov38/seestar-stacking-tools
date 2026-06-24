@@ -12,7 +12,7 @@ straight out of the Seestar app · <code>/seestar-pipeline</code> auto linear ma
 crops · final manual stretch.
 
 <p align="center">
-  <img src="img/c92/seestar-raw.jpg" height="340" alt="Raw Seestar in-app preview">
+  <img src="img/c92/seestar-ai.jpg" height="340" alt="Raw Seestar in-app preview">
   <img src="img/c92/pipeline-auto.png" height="340" alt="Pipeline automatic linear master with star-zoom QA crops">
   <img src="img/c92/final-postprocessed.jpg" height="340" alt="Final hand-stretched result">
 </p>
@@ -25,10 +25,6 @@ crops · final manual stretch.
 </p>
 <p align="center"><sub><b>C103 / NGC 2070 — Tarantula Nebula</b></sub></p>
 
-**References:** [ZWO Seestar](https://www.seestar.com/) ·
-[Carina Nebula / NGC 3372](https://en.wikipedia.org/wiki/Carina_Nebula) ·
-[Tarantula Nebula / NGC 2070](https://en.wikipedia.org/wiki/Tarantula_Nebula) ·
-[Siril](https://siril.org/) · [GraXpert](https://www.graxpert.com/)
 
 ## What it is
 
