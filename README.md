@@ -87,13 +87,15 @@ interactive sudo) and wait — do not run the installer unattended.
 If missing, ask to confirm, then: `brew install python@3.13`
 (onnxruntime ≥1.20 needs Python ≥3.10; this repo standardizes on 3.13.)
 
-**Step 3 — Siril.**
+**Step 3 — Siril.** Probe both the app bundle and a Homebrew install:
 
 ```
-/Applications/Siril.app/Contents/MacOS/siril-cli --version
+command -v siril-cli || /Applications/Siril.app/Contents/MacOS/siril-cli --version
 ```
 
-If missing, ask to confirm, then: `brew install --cask siril`
+If missing, **advise the user to install Siril manually** (preferable) by downloading it
+from https://siril.org/download/ — or, if they'd rather, it can be installed via Homebrew:
+`brew install --cask siril`. Ask the user which they prefer before installing anything.
 
 **Step 4 — Clone.** Ask the user where to clone (suggest `~/seestar-stacking-tools`), then:
 
@@ -125,7 +127,7 @@ the directory is already this clone, skip the clone and `cd` into it.
 .venv/bin/python -m pytest -q .claude/skills/seestar-stacking-compare tools
 .venv/bin/python -c "import onnxruntime as ort; ort.InferenceSession('tools/gpu/models/denoise_3.0.2_bs1.onnx', providers=['CPUExecutionProvider']); print('onnxruntime model load: ok')"
 /opt/homebrew/bin/python3.13 --version
-/Applications/Siril.app/Contents/MacOS/siril-cli --version
+command -v siril-cli && siril-cli --version || /Applications/Siril.app/Contents/MacOS/siril-cli --version
 ```
 
 If anything fails, report it and stop — do not advance to Done.
@@ -193,9 +195,10 @@ The **Automated install** section above is the preferred path. To set up by hand
 ```
 
 One venv for everything: the skill measurers need astropy/numpy (+`sep`/`scipy`); the GPU
-runner (`tools/gpu/`) adds onnxruntime/scikit-image/opencv. Only external tool is Siril
-(`/Applications/Siril.app/Contents/MacOS/siril-cli`), headless. GraXpert install is **not**
-needed — the GPU runner runs its models directly.
+runner (`tools/gpu/`) adds onnxruntime/scikit-image/opencv. Only external tool is Siril,
+headless — `siril-cli` on PATH (Homebrew install) or
+`/Applications/Siril.app/Contents/MacOS/siril-cli` (manual app install). GraXpert install
+is **not** needed — the GPU runner runs its models directly.
 
 ## Run tests
 

@@ -43,7 +43,8 @@ stack itself**, so it matches the real star size and stays clean. Denoise is a s
 1. **Stage the stack:** copy your stack into a workdir as `stack.fit` (linear, the output of
    the stacking skill).
 2. **Run Siril:** `siril-cli -d <workdir> -s experiment.ssf`. The Siril binary on macOS:
-   `/Applications/Siril.app/Contents/MacOS/siril-cli`. Seconds per variant.
+   `siril-cli` if on PATH (Homebrew install), else
+   `/Applications/Siril.app/Contents/MacOS/siril-cli` (manual app install). Seconds per variant.
 3. **Measure:** `python measure_deconv.py <workdir>/stack.fit <workdir>/rl_*.fit`. Read the
    verdict.
 4. **Decide:** adopt the recommended variant, or KEEP BASELINE if nothing wins cleanly.

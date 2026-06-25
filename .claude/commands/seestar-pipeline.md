@@ -15,7 +15,8 @@ Input path: `$1` (a directory of raw lights, or a single stacked FITS).
 ## Fixed facts (don't re-derive)
 
 - Python: `.venv/bin/python` (python3.13; astropy, numpy, sep, scipy, Pillow, onnxruntime).
-- Siril CLI: `/Applications/Siril.app/Contents/MacOS/siril-cli`
+- Siril CLI: `siril-cli` if on PATH (Homebrew install), else
+  `/Applications/Siril.app/Contents/MacOS/siril-cli` (manual app install).
 - Background + denoise run on the **Apple-Silicon GPU** via `tools/gpu/` (CoreML, no GraXpert
   install). One-time: `.venv/bin/python tools/gpu/fetch_models.py`.
   The skill runners `background.py` / `denoise.py` wrap it.

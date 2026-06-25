@@ -26,7 +26,7 @@ Not for: calibration-frame workflows (Seestar handles darks/bias itself — scri
 1. **Inspect** the folder: count `lights/*.fit`; remove any `.jpg` (breaks Siril `link`); check for existing `process/r_pp_light_.seq`.
 2. **Identify the target type** from `OBJECT`/the image: **star field** vs **nebula fills the frame**. This changes which variants help (see table). Ask the user if unsure.
 3. **Pick the script:** `experiment_reuse.ssf` if registration exists, else `experiment_full.ssf`. Edit the variant block per the table below.
-4. **Run:** `siril-cli -d <workdir> -s <script>.ssf` (background; ~1-2 s/variant small, longer for hundreds of frames). The Siril binary on macOS: `/Applications/Siril.app/Contents/MacOS/siril-cli`.
+4. **Run:** `siril-cli -d <workdir> -s <script>.ssf` (background; ~1-2 s/variant small, longer for hundreds of frames). The Siril binary on macOS: `siril-cli` if on PATH (Homebrew install), else `/Applications/Siril.app/Contents/MacOS/siril-cli` (manual app install).
 5. **Measure:** `python measure_stacks.py <workdir>/process`. Read the verdict.
 6. **Save:** copy the recommended file to `<workdir>/best/` with a param-encoded name, e.g. `M6_258f_winsor3-3_wnbstars_BEST.fit`. If the verdict says KEEP BASELINE, copy the baseline file instead.
 
