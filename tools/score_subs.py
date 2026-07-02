@@ -9,7 +9,8 @@ classifies with robust median/MAD thresholds per group:
 
   CLOUD   bg > +3 sigma AND nstars < -3 sigma   (shot through clouds, ~zero signal)
   HAZY    bg > +3 sigma, star count normal      (thin haze; normalization compensates)
-  SOFT    fwhm > +3 sigma                       (defocus or bad seeing)
+  SOFT    fwhm > +3 sigma, or nstars < -3 sigma
+          with normal bg                        (defocus or bad seeing)
   TRAILED roundness < -3 sigma and < 0.8        (wind / tracking error)
 
 Usage:
@@ -34,7 +35,8 @@ def mad_stats(x):
     x = np.asarray(x, float)
     m = np.nanmedian(x)
     s = np.nanmedian(np.abs(x - m)) * 1.4826
-    return m, max(s, 1e-9)
+    # relative floor: on unnaturally uniform data a tiny MAD makes +/-3 sigma a hair trigger
+    return m, max(s, 0.02 * abs(m), 1e-9)
 
 
 def exposure_key(path):
@@ -50,6 +52,8 @@ def exposure_key(path):
 def score_frame(path):
     with fits.open(path, memmap=False) as hdul:
         d = hdul[0].data.astype(np.float32)
+    if d.ndim != 2:
+        sys.exit(f"{path}: expected a 2D Bayer frame, got shape {d.shape}")
     h, w = d.shape
     # 2x2 superpixel bin: collapses the Bayer mosaic into mono luminance
     d = d[: h // 2 * 2, : w // 2 * 2].reshape(h // 2, 2, w // 2, 2).mean(axis=(1, 3))
@@ -61,7 +65,7 @@ def score_frame(path):
         objs = np.array([])
     n = len(objs)
     if n:
-        idx = np.argsort(objs["a"])[max(0, n - max(5, n // 4)):]  # brightest quartile
+        idx = np.argsort(objs["flux"])[max(0, n - max(5, n // 4)):]  # brightest quartile
         a = objs["a"][idx]
         b = objs["b"][idx]
         fwhm = float(np.median(a) * 2.3548 * 2)  # *2 undoes the binning -> original px
@@ -86,6 +90,9 @@ def classify(rows):
                 r["class"] = "CLOUD"
             elif r["bg"] > mbg + 3 * sbg:
                 r["class"] = "HAZY"
+            elif r["nstars"] < mns - 3 * sns:
+                # stars gone but bg normal: gross defocus (also catches NaN fwhm at 0 stars)
+                r["class"] = "SOFT"
             elif r["roundness"] < min(mrd - 3 * srd, 0.8):
                 r["class"] = "TRAILED"
             elif r["fwhm_px"] > mfw + 3 * sfw:

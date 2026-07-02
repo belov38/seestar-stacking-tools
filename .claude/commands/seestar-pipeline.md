@@ -105,8 +105,8 @@ per group:
 
 - **CLOUD** — bg > +3σ **and** nstars < −3σ: shot through clouds, ~zero signal → drop.
 - **HAZY** — bg > +3σ, star count normal: thin haze; normalization mostly compensates → usually keep.
-- **SOFT** — FWHM > +3σ: bad seeing or defocus (gross defocus also collapses nstars) → usually keep
-  unless extreme (FWHM +50%+) or the user wants maximum sharpness.
+- **SOFT** — FWHM > +3σ, or nstars < −3σ with normal bg (gross defocus): usually keep the
+  mild-seeing kind; drop true defocus (star count collapsed / FWHM +50%+).
 - **TRAILED** — roundness < −3σ (and < 0.8): wind / tracking error → drop if visibly elongated.
 
 **Always STOP and ask** — this step is never auto (dropping frames costs integration the user paid
