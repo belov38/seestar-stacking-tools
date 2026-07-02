@@ -162,16 +162,26 @@ Processing order, one skill per step (all in `.claude/skills/`, project-scoped):
 | 3. Deconvolution | `seestar-deconvolution-compare` | Siril RL ~10it | mfdeconv/Seti ring; measure ring-vs-background, not just FWHM |
 | 4. Denoise | `seestar-denoise-compare` | GraXpert ~0.3 | monotonic noise↔blur tradeoff; deep stacks need little |
 
-Then stretch (manual). Each skill has a `SKILL.md` (when/how + variant guidance), a runner
+Then plate-solve + SPCC colour calibration (Siril, no skill — the pipeline runs them), then
+stretch (manual). Each skill has a `SKILL.md` (when/how + variant guidance), a runner
 (`.ssf` / GraXpert prefs JSON), and a `measure_*.py` that prints an adopt/skip verdict.
 
 ### Run the whole pipeline: `/seestar-pipeline`
 
-`/seestar-pipeline <lights-dir | stack.fits>` chains all four steps: auto-detects the input
-(lights → stack first; single FITS → ready stack), picks each step's parameters by measurement,
-and **stops to ask only when a choice is doubtful** (deconv rings, backfired background, volatile
-star-weighted stack). Outputs land under `out/pipeline/<object>_<stamp>/` with a `REPORT.md` log;
-the deliverable is a header-complete linear FITS plus a stretched PNG.
+`/seestar-pipeline <lights-dir | stack.fits>` runs the full chain: explore the input
+(lights → stack first; single FITS → ready stack), gate frame quality before stacking
+(score every sub for clouds / haze / defocus / trails, quarantine on approval), run the
+four skill steps above, then plate-solve and SPCC-colour-calibrate the linear master
+(Siril, Seestar S30 sensor + LP-filter profiles), and finish with an autostretch preview.
+Each step's parameters are picked by measurement; it **stops to ask only when a choice is
+doubtful** (deconv rings, backfired background, volatile star-weighted stack) — plus always
+at the frame quality gate, since dropping frames is the user's call.
+
+Outputs land in a run dir next to your data (`<data-dir>/belov38-<object>-<stamp>/`) with a
+`REPORT.md` log and a `.fit` + preview PNG at every stage, so you can resume manually from
+any step. Deliverables — the SPCC-calibrated linear master (header + WCS intact), a
+stretched PNG, and an AstroBin title/description + acquisition CSV — are also copied next
+to the input; at the end the pipeline offers to delete the heavy intermediates.
 
 ### tools/
 
@@ -182,6 +192,13 @@ the deliverable is a header-complete linear FITS plus a stretched PNG.
   full-frame auto-stretch + bright-star zoom crops (reveal deconv rings / star colour) +
   optional before/after, all under one linked stretch. Used by `/seestar-pipeline` at each
   validation gate.
+- `tools/score_subs.py LIGHTS [--move CLASSES --aside-dir DIR]` — per-frame quality scorer
+  (background / star count / FWHM / roundness → CLOUD / HAZY / SOFT / TRAILED, robust
+  per-exposure-group thresholds). Backs the pipeline's frame quality gate; `--move`
+  quarantines flagged subs (moves, never deletes).
+- `tools/astrobin_session_csv.py LIGHTS --out acquisition.csv` — scans the lights and emits
+  the AstroBin acquisition-sessions import CSV (groups subs into observing nights by the
+  local filename timestamp; fills date / count / duration / binning / gain / filter).
 
 ## Setup (manual)
 
