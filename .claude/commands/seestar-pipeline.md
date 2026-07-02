@@ -1,5 +1,5 @@
 ---
-description: Run a Seestar S30 frame through the full processing pipeline (explore → stack → background → deconv → denoise → plate-solve → SPCC colour calibration → stretch), auto-picking parameters by measurement, stopping only when a choice is doubtful, emitting AstroBin title/description + acquisition CSV, and offering an optional cleanup of intermediate files at the end.
+description: Run a Seestar S30 frame through the full processing pipeline (explore → frame quality gate → stack → background → deconv → denoise → plate-solve → SPCC colour calibration → stretch), auto-picking parameters by measurement, stopping only when a choice is doubtful, emitting AstroBin title/description + acquisition CSV, and offering an optional cleanup of intermediate files at the end.
 argument-hint: <lights-dir | stack.fits>
 ---
 
@@ -21,12 +21,15 @@ Input path: `$1` (a directory of raw lights, or a single stacked FITS).
   install). One-time: `.venv/bin/python tools/gpu/fetch_models.py`.
   The skill runners `background.py` / `denoise.py` wrap it.
 - AstroBin session CSV: `tools/astrobin_session_csv.py` (scans lights, emits the import CSV).
+- Sub quality scorer: `tools/score_subs.py` (per-frame bg / star count / FWHM / roundness →
+  CLOUD/HAZY/SOFT/TRAILED classes; `--move CLASSES --aside-dir DIR` quarantines).
 - Processing order is **physically fixed**: stack → background extraction → deconvolution →
   denoise → plate-solve → **SPCC colour calibration** → stretch. Deconv and denoise run on
   **linear** data; denoise comes after deconv; plate-solve runs on the final linear master; SPCC
   runs right after plate-solve (it needs the WCS to match the star catalog **and** a flat
   background — both already true by then) and **before** stretch (SPCC is a linear operation).
-  (Step 1 explore and Step 2 run-dir come first; they don't touch pixels.)
+  (Steps 1–3 — explore, run dir, frame quality gate — come first; they don't touch pixels,
+  only inspect and quarantine whole frames.)
 - Pass an **absolute** output path to the runners to avoid any cwd ambiguity.
 - Each processing step is a skill with a `measure_*.py` that prints a verdict — trust the numbers,
   but the **stop rules below override blind adoption** (FWHM once fooled us into adopting deconv
@@ -34,7 +37,7 @@ Input path: `$1` (a directory of raw lights, or a single stacked FITS).
 
 ## Universal rule — every step leaves a FITS *and* a PNG
 
-After **every** processing step (Steps 3–9), whether it auto-adopts or stops, write the adopted
+After **every** processing step (Steps 4–10), whether it auto-adopts or stops, write the adopted
 result as **both** a header-preserved `.fit` in the step's output dir **and** a preview `.png` in
 `previews/`. Do this even when no user input is needed. Then print a one-line
 `validate here: <abs .fit>  |  <abs .png>` so the user can open any intermediate in Siril and **pick
@@ -64,7 +67,7 @@ This step only inspects and tidies the input — it creates no run dir and touch
    - `$1` is a **dir containing a `lights/` subdir** → `DATADIR=$1`, `LIGHTS=$1/lights`.
    - `$1` is a **dir of `.fit` not named `lights`** (no `lights/` subdir) → **error clearly**:
      ask the user to move the subs into `<dir>/lights/`. Do **not** guess or auto-rename.
-   - `$1` is a **single FITS** → ready-stack mode (skip Step 3; this file is the Step-4 base),
+   - `$1` is a **single FITS** → ready-stack mode (skip Steps 3–4; this file is the Step-5 base),
      `DATADIR=dirname($1)`. Warn if the header is stripped (no OBJECT/RA/DEC). (No `lights/` needed.)
    Then **validate**: `LIGHTS/` exists and holds ≥1 `.fit` (else error out).
 5. **Read `OBJECT`** from a representative FITS (astropy) for naming; fall back to the basename.
@@ -84,7 +87,43 @@ mkdir -p "$RUN"/{01_stack,02_background,03_deconv,04_denoise,05_stretch,previews
 this doc.) Create `REPORT.md` with a header (input path, mode, object, local + UTC time). Announce
 the plan and the absolute run dir to the user, then proceed.
 
-## The processing steps (Steps 3–9)
+## Step 3 — Frame quality gate (clouds, haze, focus, trails) — stacking mode only
+
+Registration does **not** catch this: on the NGC 292 run Siril registered 920/932 frames while 87
+of them were shot through clouds (background +7σ, star count −6σ) — they went into the stack and
+diluted SNR the whole way down the pipeline. Score every sub **before** stacking (skip this step
+in ready-stack mode):
+
+```
+.venv/bin/python tools/score_subs.py <LIGHTS> --out "$RUN/sub_scores.csv"
+```
+
+The scorer measures per frame — background level, star count, FWHM, roundness — on a 2×2-binned
+luminance (~0.5 s/frame), groups frames **by exposure** (a 60 s sub has ~2× the sky of a 30 s sub;
+mixing groups falsely flags every long sub), and classifies with robust median/MAD thresholds
+per group:
+
+- **CLOUD** — bg > +3σ **and** nstars < −3σ: shot through clouds, ~zero signal → drop.
+- **HAZY** — bg > +3σ, star count normal: thin haze; normalization mostly compensates → usually keep.
+- **SOFT** — FWHM > +3σ: bad seeing or defocus (gross defocus also collapses nstars) → usually keep
+  unless extreme (FWHM +50%+) or the user wants maximum sharpness.
+- **TRAILED** — roundness < −3σ (and < 0.8): wind / tracking error → drop if visibly elongated.
+
+**Always STOP and ask** — this step is never auto (dropping frames costs integration the user paid
+for). Present the per-class counts **with integration minutes lost** per option, note the sanity
+cross-check (Seestar's own on-device stack count, e.g. `Stacked_552_...` vs subs captured, roughly
+predicts how many frames are bad), give your recommendation (typically: drop CLOUD + TRAILED,
+keep HAZY + SOFT), and offer: **drop CLOUD only / drop recommended set / drop all flagged /
+keep everything**. On the answer, quarantine — move, never delete:
+
+```
+.venv/bin/python tools/score_subs.py <LIGHTS> --move CLOUD,TRAILED --aside-dir <DATADIR>/_clouds_aside
+```
+
+Log the decision, per-class counts, and the new frame count / integration total to `REPORT.md`.
+The AstroBin CSV (Finish step) scans `lights/` and so picks up the reduced set automatically.
+
+## The processing steps (Steps 4–10)
 
 For each step: invoke the named skill (to load its current how-to), run its sweep with the
 binaries above, run its `measure_*.py`, generate the preview(s), apply the stop rule, then honor
@@ -92,29 +131,30 @@ the **universal rule** (FITS + PNG + `validate here:`).
 
 | Step | Skill to invoke | Output dir | AUTO-adopt when | STOP & ask when |
 |---|---|---|---|---|
-| 3 | `seestar-stacking-compare` *(dir input only)* | `01_stack/` | verdict `KEEP BASELINE`, **or** a tuned win ≥3% faint-SNR that is **not** from star weighting | the winner is a `nbstars`/`wfwhm` (star-weighting) variant — volatile, confirm before adopting |
-| 4 | `seestar-background-extraction-compare` | `02_background/` | GraXpert AI: colour cast < ~1% and **not** `BACKFIRED` | cast not pulled under ~1%, or every method backfired |
-| 5 | `seestar-deconvolution-compare` | `03_deconv/` | ring depth comfortably above the floor **AND** a clear FWHM gain | **default to STOP** on any doubt — borderline ring depth, marginal FWHM, or visible rings in the preview |
-| 6 | `seestar-denoise-compare` | `04_denoise/` | strongest setting with FWHM Δ < ~3% **and** faint_keep > ~0.85 | even the lowest strength over-blurs → propose **skip denoise** |
-| 7 | *(plate-solve — Siril, no skill)* | `05_stretch/` | always solve the final master (skip if already `PLTSOLVD`) | **warn + continue** if the solve fails (e.g. no internet) — keep the unsolved master |
-| 8 | *(SPCC colour calibration — Siril, no skill)* | `05_stretch/` | SPCC reports `succeeded` and the star-core G/R moves toward 1 — auto-adopt the calibrated master | **warn + continue** if SPCC fails (no internet / no `siril-spcc-database`) — keep the un-calibrated solved master |
-| 9 | *(stretch — manual, no skill)* | `05_stretch/` | — | **always present** the final result (stretch is the user's call) |
+| 4 | `seestar-stacking-compare` *(dir input only)* | `01_stack/` | verdict `KEEP BASELINE`, **or** a tuned win ≥3% faint-SNR that is **not** from star weighting | the winner is a `nbstars`/`wfwhm` (star-weighting) variant — volatile, confirm before adopting |
+| 5 | `seestar-background-extraction-compare` | `02_background/` | GraXpert AI: colour cast < ~1% and **not** `BACKFIRED` | cast not pulled under ~1%, or every method backfired |
+| 6 | `seestar-deconvolution-compare` | `03_deconv/` | ring depth comfortably above the floor **AND** a clear FWHM gain | **default to STOP** on any doubt — borderline ring depth, marginal FWHM, or visible rings in the preview |
+| 7 | `seestar-denoise-compare` | `04_denoise/` | strongest setting with FWHM Δ < ~3% **and** faint_keep > ~0.85 | even the lowest strength over-blurs → propose **skip denoise** |
+| 8 | *(plate-solve — Siril, no skill)* | `05_stretch/` | always solve the final master (skip if already `PLTSOLVD`) | **warn + continue** if the solve fails (e.g. no internet) — keep the unsolved master |
+| 9 | *(SPCC colour calibration — Siril, no skill)* | `05_stretch/` | SPCC reports `succeeded` and the star-core G/R moves toward 1 — auto-adopt the calibrated master | **warn + continue** if SPCC fails (no internet / no `siril-spcc-database`) — keep the un-calibrated solved master |
+| 10 | *(stretch — manual, no skill)* | `05_stretch/` | — | **always present** the final result (stretch is the user's call) |
 
 Notes per step:
-- **Step 3 (stack):** pick `experiment_reuse.ssf` if `process/r_pp_light_.seq` exists (you found this
+- **Step 4 (stack):** pick `experiment_reuse.ssf` if `process/r_pp_light_.seq` exists (you found this
   in Step 1), else `experiment_full.ssf`; choose variants by frame count + target type (the skill's
   table). The adopted stack is the colour-correct base (equalized RGB) — do **not** substitute a raw
-  mean.
-- **Step 4 (background):** the skill's `background.py` runs the GraXpert AI model on the GPU.
+  mean. **Note:** an existing `process/` sequence predates the Step-3 quarantine — if frames were
+  dropped in Step 3, re-register (full script), don't reuse.
+- **Step 5 (background):** the skill's `background.py` runs the GraXpert AI model on the GPU.
   AI is the default; subsky usually backfires on star fields.
-- **Step 5 (deconv):** Siril RL (~10 it, optional `-tv`); `makepsf stars` first. This is the
+- **Step 6 (deconv):** Siril RL (~10 it, optional `-tv`); `makepsf stars` first. This is the
   trap step — measure **ring depth vs background**, not FWHM alone, and lean toward stopping.
   Reject mfdeconv / Cosmic Clarity.
-- **Step 6 (denoise):** use the skill's `denoise.py` runner (GPU denoise, ~25s).
+- **Step 7 (denoise):** use the skill's `denoise.py` runner (GPU denoise, ~25s).
   **Pass an absolute output path.** The denoiser is fast, so sweep **broad in one pass** —
   ~0.1 / 0.15 / 0.2 / 0.3 / 0.5 / 0.8 — render a preview per variant, and pick by measurement. Deep
   stacks usually want ~0.15–0.3 or skip; if even the lowest over-blurs, propose skip denoise.
-- **Step 7 (plate-solve):** copy the final adopted **linear, header-complete** FITS to
+- **Step 8 (plate-solve):** copy the final adopted **linear, header-complete** FITS to
   `05_stretch/<OBJECT>_final_solved.fit`, then plate-solve it in Siril **seeded by the header**
   and **online** (queries the catalog; Seestar's RA/DEC + `FOCALLEN` + `XPIXSZ` make it fast):
   ```
@@ -127,7 +167,7 @@ Notes per step:
   solved. Nothing will be done." when `PLTSOLVD` is set (Siril's `-2pass` registration already
   solves the stack and the WCS survives header-restore) — that's a fine no-op. If the solve
   **fails** (e.g. no internet), warn the user and continue with the unsolved master.
-- **Step 8 (SPCC colour calibration):** Seestar stacks autostretch with green-dominant star
+- **Step 9 (SPCC colour calibration):** Seestar stacks autostretch with green-dominant star
   cores (cyan/turquoise stars) — un-calibrated OSC channel balance (GRBG 2× green + the LP filter
   cuts red). SPCC fixes it on the **linear, plate-solved** master, **before** stretch. Run it in
   Siril with the Seestar S30 profiles from the SPCC database (`siril-spcc-database`):
@@ -143,17 +183,17 @@ Notes per step:
   the LP filter). SPCC needs **online** access (downloads the Gaia catalog) — if it **fails** (no
   internet / DB missing), warn and continue with the un-calibrated `<OBJECT>_final_solved.fit`.
   It may print *"imprecise solution, consider correcting the image gradient first"* on a
-  frame-filling nebula — acceptable (background was already extracted in Step 4; the fit is still
+  frame-filling nebula — acceptable (background was already extracted in Step 5; the fit is still
   usable). **Measure the effect:** read bright-star-core R/G/B before vs after (top ~0.05% by
   luminance) and log the G/R move toward ~1 (e.g. 1.66 → 1.09) as the verdict. The adopted SPCC
-  master `<OBJECT>_final_spcc.fit` becomes the deliverable carried into Step 9; keep the pre-SPCC
+  master `<OBJECT>_final_spcc.fit` becomes the deliverable carried into Step 10; keep the pre-SPCC
   `<OBJECT>_final_solved.fit` too.
-- **Step 9 (stretch):** the colour-calibrated `05_stretch/<OBJECT>_final_spcc.fit` (or
+- **Step 10 (stretch):** the colour-calibrated `05_stretch/<OBJECT>_final_spcc.fit` (or
   `<OBJECT>_final_solved.fit` if SPCC failed) is the deliverable for the user's own stretch / curves
   (header + WCS + colour intact). Render a stretched full-frame PNG with `tools/preview.py` (no
   `--ref`) **from that calibrated master** as a visual deliverable, writing it **into the kept
   `05_stretch/` dir** as `05_stretch/<OBJECT>_final_stretch.png` (not `previews/`) so it survives
-  Step 10 cleanup. Do **not** auto-tune a stretch.
+  Step 11 cleanup. Do **not** auto-tune a stretch.
 
 ## Previews
 
@@ -184,7 +224,7 @@ universal rule) so the user can glance back if they want.
 
 ## Finish
 
-When Step 9 is done, produce the publication deliverables, then summarize.
+When Step 10 is done, produce the publication deliverables, then summarize.
 
 1. **AstroBin acquisition CSV** (stacking mode only — needs the raw lights):
    ```
@@ -213,7 +253,7 @@ Then post a short summary: the per-step decisions, the deliverable paths (run di
 SPCC-calibrated, header + WCS intact). Do **not** commit anything (image data is gitignored; the
 user commits skills/tools, not run outputs).
 
-## Step 10 — Offer cleanup (optional; last action; never automatic)
+## Step 11 — Offer cleanup (optional; last action; never automatic)
 
 The pipeline deliberately leaves a `.fit` + `.png` at **every** stage so the user can resume
 manually from any step — deleting those throws that away, so **never prune on your own**. As the
@@ -231,8 +271,8 @@ explicit confirmation.
      `DATADIR`**. The final stretch preview lives here (in `05_stretch/`, not `previews/`), so
      removing `previews/` never loses it.
    - **Remove:** `01_stack/`, `02_background/`, `03_deconv/`, `04_denoise/`, `previews/`.
-   - **Never touch:** the user's source lights and `<lights>/_jpg_aside/` — those are the user's
-     own originals, not pipeline output.
+   - **Never touch:** the user's source lights, `<lights>/_jpg_aside/`, and
+     `<DATADIR>/_clouds_aside/` — those are the user's own originals, not pipeline output.
 3. **Ask a yes/no question** with the measured size (e.g. "Permanently delete the intermediates
    and reclaim ~1.4 GB? `05_stretch/` + `REPORT.md` + the `DATADIR` copies are kept; this can't be
    undone"). **Wait** for the answer.
