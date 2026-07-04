@@ -152,7 +152,7 @@ Notes per step:
   Reject mfdeconv / Cosmic Clarity.
 - **Step 7 (denoise):** use the skill's `denoise.py` runner (GPU denoise, ~25s).
   **Pass an absolute output path.** The denoiser is fast, so sweep **broad in one pass** —
-  ~0.1 / 0.15 / 0.2 / 0.3 / 0.5 / 0.8 — render a preview per variant, and pick by measurement. Deep
+  ~0.1 / 0.15 / 0.2 / 0.3 / 0.5 / 0.8 / 0.9 — render a preview per variant, and pick by measurement. Deep
   stacks usually want ~0.15–0.3 or skip; if even the lowest over-blurs, propose skip denoise.
 - **Step 8 (plate-solve):** copy the final adopted **linear, header-complete** FITS to
   `05_stretch/<OBJECT>_final_solved.fit`, then plate-solve it in Siril **seeded by the header**
