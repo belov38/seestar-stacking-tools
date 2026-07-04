@@ -1,5 +1,5 @@
 ---
-description: Run a Seestar S30 frame through the full processing pipeline (explore → frame quality gate → stack → background → deconv → denoise → plate-solve → SPCC colour calibration → stretch), auto-picking parameters by measurement, stopping only when a choice is doubtful, emitting AstroBin title/description + acquisition CSV, and offering an optional cleanup of intermediate files at the end.
+description: Run a Seestar S30 frame through the full processing pipeline (explore → frame quality gate → stack → background → deconv → denoise → plate-solve → SPCC colour calibration → HOO/SHO palettes → stretch), auto-picking parameters by measurement, stopping only when a choice is doubtful, emitting AstroBin title/description + acquisition CSV, and offering an optional cleanup of intermediate files at the end.
 argument-hint: <lights-dir | stack.fits>
 ---
 
@@ -37,7 +37,7 @@ Input path: `$1` (a directory of raw lights, or a single stacked FITS).
 
 ## Universal rule — every step leaves a FITS *and* a PNG
 
-After **every** processing step (Steps 4–10), whether it auto-adopts or stops, write the adopted
+After **every** processing step (Steps 4–11), whether it auto-adopts or stops, write the adopted
 result as **both** a header-preserved `.fit` in the step's output dir **and** a preview `.png` in
 `previews/`. Do this even when no user input is needed. Then print a one-line
 `validate here: <abs .fit>  |  <abs .png>` so the user can open any intermediate in Siril and **pick
@@ -123,7 +123,7 @@ keep everything**. On the answer, quarantine — move, never delete:
 Log the decision, per-class counts, and the new frame count / integration total to `REPORT.md`.
 The AstroBin CSV (Finish step) scans `lights/` and so picks up the reduced set automatically.
 
-## The processing steps (Steps 4–10)
+## The processing steps (Steps 4–11)
 
 For each step: invoke the named skill (to load its current how-to), run its sweep with the
 binaries above, run its `measure_*.py`, generate the preview(s), apply the stop rule, then honor
@@ -137,7 +137,8 @@ the **universal rule** (FITS + PNG + `validate here:`).
 | 7 | `seestar-denoise-compare` | `04_denoise/` | strongest setting with FWHM Δ < ~3% **and** faint_keep > ~0.85 | even the lowest strength over-blurs → propose **skip denoise** |
 | 8 | *(plate-solve — Siril, no skill)* | `05_stretch/` | always solve the final master (skip if already `PLTSOLVD`) | **warn + continue** if the solve fails (e.g. no internet) — keep the unsolved master |
 | 9 | *(SPCC colour calibration — Siril, no skill)* | `05_stretch/` | SPCC reports `succeeded` and the star-core G/R moves toward 1 — auto-adopt the calibrated master | **warn + continue** if SPCC fails (no internet / no `siril-spcc-database`) — keep the un-calibrated solved master |
-| 10 | *(stretch — manual, no skill)* | `05_stretch/` | — | **always present** the final result (stretch is the user's call) |
+| 10 | *(palette masters HOO/SHO — `tools/palette.py`, no skill)* | `05_stretch/` | always — EMIT or SKIP decided by the emission-separation metric; log either way | never |
+| 11 | *(stretch — manual, no skill)* | `05_stretch/` | — | **always present** the final result (stretch is the user's call) |
 
 Notes per step:
 - **Step 4 (stack):** pick `experiment_reuse.ssf` if `process/r_pp_light_.seq` exists (you found this
@@ -186,14 +187,32 @@ Notes per step:
   frame-filling nebula — acceptable (background was already extracted in Step 5; the fit is still
   usable). **Measure the effect:** read bright-star-core R/G/B before vs after (top ~0.05% by
   luminance) and log the G/R move toward ~1 (e.g. 1.66 → 1.09) as the verdict. The adopted SPCC
-  master `<OBJECT>_final_spcc.fit` becomes the deliverable carried into Step 10; keep the pre-SPCC
-  `<OBJECT>_final_solved.fit` too.
-- **Step 10 (stretch):** the colour-calibrated `05_stretch/<OBJECT>_final_spcc.fit` (or
+  master `<OBJECT>_final_spcc.fit` becomes the deliverable carried into Steps 10–11; keep the
+  pre-SPCC `<OBJECT>_final_solved.fit` too.
+- **Step 10 (palette masters HOO/SHO):** the LP filter is dual-band (Ha 656 nm + OIII ~500 nm),
+  so an emission target carries a second free palette in the same data (Ha lives in R, OIII in
+  G+B). Run on the adopted master — `<OBJECT>_final_spcc.fit`, or `<OBJECT>_final_solved.fit`
+  if SPCC failed:
+  ```
+  .venv/bin/python tools/palette.py 05_stretch/<OBJECT>_final_spcc.fit \
+    --outdir 05_stretch --basename <OBJECT>_final
+  ```
+  It prints one parseable line: `PALETTES: EMIT (separation=..., threshold=...)` or
+  `PALETTES: SKIP (...)`. On **EMIT** it writes `<OBJECT>_final_HOO.fit` (R=Ha, G=B=OIII) and
+  `<OBJECT>_final_SHO.fit` (synthetic SHO, golden Ha after stretch) — linear, header + WCS
+  intact, stretch-ready like the SPCC master. Render a preview PNG for each with
+  `tools/preview.py` (no `--ref`) into **`05_stretch/`** (not `previews/` — they must survive
+  Step 12 cleanup) as `05_stretch/<OBJECT>_final_HOO.png` / `<OBJECT>_final_SHO.png`, and drop
+  the `validate here:` lines for both. On **SKIP** (continuum target — cluster/galaxy: star
+  colours, not emission; the gate suppresses stars before measuring, see FINDINGS.md) log the
+  verdict line with the measured separation to REPORT.md and move on. This step is always
+  AUTO — never stop to ask; log the verdict to REPORT.md in both cases.
+- **Step 11 (stretch):** the colour-calibrated `05_stretch/<OBJECT>_final_spcc.fit` (or
   `<OBJECT>_final_solved.fit` if SPCC failed) is the deliverable for the user's own stretch / curves
   (header + WCS + colour intact). Render a stretched full-frame PNG with `tools/preview.py` (no
   `--ref`) **from that calibrated master** as a visual deliverable, writing it **into the kept
   `05_stretch/` dir** as `05_stretch/<OBJECT>_final_stretch.png` (not `previews/`) so it survives
-  Step 11 cleanup. Do **not** auto-tune a stretch.
+  Step 12 cleanup. Do **not** auto-tune a stretch.
 
 ## Previews
 
@@ -224,7 +243,7 @@ universal rule) so the user can glance back if they want.
 
 ## Finish
 
-When Step 10 is done, produce the publication deliverables, then summarize.
+When Step 11 is done, produce the publication deliverables, then summarize.
 
 1. **AstroBin acquisition CSV** (stacking mode only — needs the raw lights):
    ```
@@ -242,18 +261,21 @@ When Step 10 is done, produce the publication deliverables, then summarize.
    (ZWO Seestar S30 / sensor / focal), total integration (subs × dur = hours, and stacked count
    if it differs), date range, and the **actual processing chain you logged** (stack params →
    GraXpert AI bg → Siril RL params → GraXpert denoise strength → plate-solved → SPCC colour
-   calibration: `Sony IMX585` + `ZWO Seestar LP`).
+   calibration: `Sony IMX585` + `ZWO Seestar LP`). If Step 10 emitted, mention the available
+   HOO/SHO palette masters in the description.
 3. **Copy the deliverables next to the input** so the user finds them with their data — into
    `DATADIR` (the parent of `LIGHTS/`, or beside the input FITS): the calibrated master
    `<OBJECT>_final_spcc.fit` (and `<OBJECT>_final_solved.fit` if SPCC ran — the pre-SPCC version),
-   `<OBJECT>_astrobin.txt`, `<OBJECT>_astrobin_acquisition.csv`, `<OBJECT>_final_stretch.png`.
+   the palette masters `<OBJECT>_final_HOO.fit` + `<OBJECT>_final_SHO.fit` and their PNGs
+   (if Step 10 emitted), `<OBJECT>_astrobin.txt`, `<OBJECT>_astrobin_acquisition.csv`,
+   `<OBJECT>_final_stretch.png`.
 
 Then post a short summary: the per-step decisions, the deliverable paths (run dir `05_stretch/`
 **and** the copies in `DATADIR`), and the next manual steps (stretch curves — colour is already
 SPCC-calibrated, header + WCS intact). Do **not** commit anything (image data is gitignored; the
 user commits skills/tools, not run outputs).
 
-## Step 11 — Offer cleanup (optional; last action; never automatic)
+## Step 12 — Offer cleanup (optional; last action; never automatic)
 
 The pipeline deliberately leaves a `.fit` + `.png` at **every** stage so the user can resume
 manually from any step — deleting those throws that away, so **never prune on your own**. As the
@@ -266,10 +288,12 @@ explicit confirmation.
    ```
 2. **State exactly what stays vs goes:**
    - **Keep:** `05_stretch/` (SPCC-calibrated master `<OBJECT>_final_spcc.fit`, the pre-SPCC
-     `<OBJECT>_final_solved.fit`, the final autostretch PNG `<OBJECT>_final_stretch.png`,
-     `astrobin.txt`, `astrobin_acquisition.csv`), `REPORT.md`, and the deliverable **copies in
-     `DATADIR`**. The final stretch preview lives here (in `05_stretch/`, not `previews/`), so
-     removing `previews/` never loses it.
+     `<OBJECT>_final_solved.fit`, the palette masters `<OBJECT>_final_HOO.fit` /
+     `<OBJECT>_final_SHO.fit` + their PNGs when Step 10 emitted, the final autostretch PNG
+     `<OBJECT>_final_stretch.png`, `astrobin.txt`, `astrobin_acquisition.csv`), `REPORT.md`,
+     and the deliverable **copies in `DATADIR`**. The final stretch preview and the palette
+     previews live here (in `05_stretch/`, not `previews/`), so removing `previews/` never
+     loses them.
    - **Remove:** `01_stack/`, `02_background/`, `03_deconv/`, `04_denoise/`, `previews/`.
    - **Never touch:** the user's source lights, `<lights>/_jpg_aside/`, and
      `<DATADIR>/_clouds_aside/` — those are the user's own originals, not pipeline output.
