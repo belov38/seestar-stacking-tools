@@ -57,3 +57,43 @@ def neutralize_background(ha, oiii):
     bg_oiii = float(np.median(oiii))
     pedestal = 0.5 * (bg_ha + bg_oiii)
     return ha - bg_ha + pedestal, oiii - bg_oiii + pedestal, pedestal
+
+
+# Emission-separation threshold: normalized MAD of log2(Ha/OIII) over signal pixels.
+# Initial value; calibrated on real Seestar data (C103 Tarantula SPCC master must
+# EMIT, C76 open-cluster stack must SKIP) — measured values in FINDINGS.md.
+SEPARATION_THRESHOLD = 0.15
+
+# Signal mask needs at least this many usable pixels for a meaningful spread.
+MIN_MASK_PIXELS = 100
+
+
+def _median_madn(x):
+    med = float(np.median(x))
+    madn = float(np.median(np.abs(x - med)) * 1.4826)
+    return med, madn
+
+
+def emission_separation(ha, oiii):
+    """Normalized MAD of log2(Ha/OIII) over signal pixels, or None if degenerate.
+
+    Continuum sources (stars, galaxies) have Ha proportional to OIII everywhere,
+    so the ratio spread is small; emission targets diverge region by region.
+    """
+    combined = ha + oiii
+    med_c, madn_c = _median_madn(combined)
+    if madn_c <= 0:
+        return None
+    mask = combined > med_c + 3.0 * madn_c
+    if int(mask.sum()) < MIN_MASK_PIXELS:
+        return None
+    med_ha, _ = _median_madn(ha)
+    med_oiii, _ = _median_madn(oiii)
+    ha_sig = ha[mask] - med_ha
+    oiii_sig = oiii[mask] - med_oiii
+    valid = (ha_sig > 0) & (oiii_sig > 0)
+    if int(valid.sum()) < MIN_MASK_PIXELS:
+        return None
+    ratio = np.log2(ha_sig[valid] / oiii_sig[valid])
+    _, spread = _median_madn(ratio)
+    return spread

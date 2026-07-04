@@ -60,3 +60,24 @@ def test_load_rgb_master_rejects_mono():
         fits.writeto(p, np.zeros((50, 50), dtype=np.float32), overwrite=True)
         with pytest.raises(SystemExit):
             palette.load_rgb_master(p)
+
+
+def test_separation_low_for_continuum():
+    ha, oiii = palette.extract_ha_oiii(_continuum())
+    sep = palette.emission_separation(ha, oiii)
+    assert sep is not None
+    assert sep < palette.SEPARATION_THRESHOLD
+
+
+def test_separation_high_for_emission():
+    ha, oiii = palette.extract_ha_oiii(_emission())
+    sep = palette.emission_separation(ha, oiii)
+    assert sep is not None
+    assert sep > palette.SEPARATION_THRESHOLD
+
+
+def test_separation_none_for_empty_field():
+    rng = np.random.default_rng(3)
+    flat = rng.normal(0.1, 0.005, (3, 120, 90))  # noise only, no signal above bg+3sigma
+    ha, oiii = palette.extract_ha_oiii(flat)
+    assert palette.emission_separation(ha, oiii) is None
