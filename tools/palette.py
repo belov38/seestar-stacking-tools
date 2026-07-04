@@ -10,12 +10,14 @@ writes linear, stretch-ready palette masters with the input header + WCS intact:
   <base>_HOO.fit   R=Ha, G=OIII, B=OIII               (red hydrogen / teal oxygen)
   <base>_SHO.fit   R=Ha, G=a*Ha+(1-a)*OIII, B=OIII    (synthetic Hubble-style; a=0.3)
 
-Continuum targets (galaxies, clusters) have Ha proportional to OIII everywhere, so
-the log-ratio spread over signal pixels is small -> SKIP (a palette of a continuum
-target is just the same grey image twice). Verdict line (parseable, exit code 0):
+The EMIT/SKIP gate measures the log2(Ha/OIII) spread over the extended (star-
+suppressed) signal: emission targets diverge region by region, while continuum
+targets (clusters, galaxies) stay proportional -> SKIP (a palette of a continuum
+target is just the same grey image twice). Stars are suppressed first because
+star-colour diversity fakes separation. Verdict line (parseable, exit code 0):
 
-  PALETTES: EMIT (separation=0.421, threshold=0.15)
-  PALETTES: SKIP (separation=0.062, threshold=0.15)
+  PALETTES: EMIT (separation=0.316, threshold=0.23)
+  PALETTES: SKIP (separation=0.167, threshold=0.23)
 
 Usage:
   palette.py MASTER.fit [--outdir DIR] [--basename NAME] [--sho-alpha 0.3]
@@ -27,6 +29,7 @@ import sys
 
 import numpy as np
 from astropy.io import fits
+from scipy.ndimage import median_filter
 
 
 def load_rgb_master(path):
@@ -59,13 +62,19 @@ def neutralize_background(ha, oiii):
     return ha - bg_ha + pedestal, oiii - bg_oiii + pedestal, pedestal
 
 
-# Emission-separation threshold: normalized MAD of log2(Ha/OIII) over signal pixels.
-# Initial value; calibrated on real Seestar data (C103 Tarantula SPCC master must
-# EMIT, C76 open-cluster stack must SKIP) — measured values in FINDINGS.md.
-SEPARATION_THRESHOLD = 0.15
+# Emission-separation threshold: normalized MAD of log2(Ha/OIII) over the
+# star-suppressed signal mask. Calibrated on real Seestar masters (FINDINGS.md):
+# emission C103 0.316 / M17 0.335 / M8 0.419 (EMIT) vs continuum M6 open cluster
+# 0.167 / C80 globular 0.131 (SKIP); threshold = geometric mean of the two
+# nearest classes, sqrt(0.167 * 0.316) ~= 0.23.
+SEPARATION_THRESHOLD = 0.23
 
-# Signal mask needs at least this many usable pixels for a meaningful spread.
+# Signal mask needs at least this many (binned) pixels for a meaningful spread.
 MIN_MASK_PIXELS = 100
+
+# Star suppression before the metric: 2x2 mean bin + median filter (~18 px
+# full-res window, above Seestar star FWHM, far below nebula scales).
+SUPPRESS_MEDIAN_SIZE = 9
 
 
 def _median_madn(x):
@@ -74,23 +83,42 @@ def _median_madn(x):
     return med, madn
 
 
-def emission_separation(ha, oiii):
-    """Normalized MAD of log2(Ha/OIII) over signal pixels, or None if degenerate.
+def _bin2(x):
+    """2x2 mean bin."""
+    h, w = x.shape
+    return x[: h // 2 * 2, : w // 2 * 2].reshape(h // 2, 2, w // 2, 2).mean(axis=(1, 3))
 
-    Continuum sources (stars, galaxies) have Ha proportional to OIII everywhere,
-    so the ratio spread is small; emission targets diverge region by region.
+
+def emission_separation(ha, oiii):
+    """Normalized MAD of log2(Ha/OIII) over star-suppressed signal pixels.
+
+    Returns None when no extended signal survives suppression (degenerate mask).
+    Stars are suppressed first because a star field's colour diversity (different
+    stellar temperatures) fakes a large ratio spread without any emission — on a
+    raw star-pixel mask the M6 open cluster scores HIGHER than the Tarantula.
+    Only the extended structure left after suppression is evidence of Ha/OIII
+    emission separation. The signal mask thresholds the suppressed map against
+    the PIXEL noise of the unsuppressed (binned) map — the suppressed map is so
+    smooth that its own MAD collapses and star-suppression residuals would leak
+    back into the mask.
     """
-    combined = ha + oiii
-    med_c, madn_c = _median_madn(combined)
-    if madn_c <= 0:
+    ha_b = _bin2(ha)
+    oiii_b = _bin2(oiii)
+    ha_s = median_filter(ha_b, size=SUPPRESS_MEDIAN_SIZE)
+    oiii_s = median_filter(oiii_b, size=SUPPRESS_MEDIAN_SIZE)
+    # noise floor from the unsuppressed binned map; mask on the suppressed one
+    _, madn_pixel = _median_madn(ha_b + oiii_b)
+    if madn_pixel <= 0:
         return None
-    mask = combined > med_c + 3.0 * madn_c
+    combined_s = ha_s + oiii_s
+    med_s, _ = _median_madn(combined_s)
+    mask = combined_s > med_s + 3.0 * madn_pixel
     if int(mask.sum()) < MIN_MASK_PIXELS:
         return None
-    med_ha, _ = _median_madn(ha)
-    med_oiii, _ = _median_madn(oiii)
-    ha_sig = ha[mask] - med_ha
-    oiii_sig = oiii[mask] - med_oiii
+    med_ha, _ = _median_madn(ha_s)
+    med_oiii, _ = _median_madn(oiii_s)
+    ha_sig = ha_s[mask] - med_ha
+    oiii_sig = oiii_s[mask] - med_oiii
     valid = (ha_sig > 0) & (oiii_sig > 0)
     if int(valid.sum()) < MIN_MASK_PIXELS:
         return None

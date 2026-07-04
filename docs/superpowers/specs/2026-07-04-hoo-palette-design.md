@@ -57,25 +57,36 @@ Decisions made during brainstorming (with Ilia):
 
 ## 2. Gate metric (EMIT/SKIP verdict)
 
-- Signal mask: pixels above background + 3σ on the combined `Ha + OIII` image
-  (robust median/MAD estimates).
-- Metric: MAD of `log2(Ha/OIII)` over the signal mask, both channels
-  background-subtracted and clipped to positive values.
-- Rationale: for continuum sources (stars, galaxies, clusters) Ha and OIII are
-  proportional everywhere → ratio spread is small. For emission targets,
-  Ha-dominant and OIII-dominant regions diverge → spread is large.
-- Threshold: a named constant in the script, calibrated on real data —
-  C103 Tarantula SPCC master must yield EMIT, the C76 open-cluster stack must
-  yield SKIP. Measured values for both go into FINDINGS.md.
+*(Revised after real-data calibration — the original star-naive metric scored the
+M6 open cluster HIGHER than the Tarantula: star-colour diversity fakes separation.)*
+
+- **Star suppression first:** 2×2 mean bin + median filter (size 9, ~18 px full-res
+  window) on both channels. Point sources vanish; extended emission survives.
+  Needs scipy (`scipy.ndimage.median_filter`) — already in the repo venv.
+- Signal mask: suppressed `Ha + OIII` above its median + 3× the MADN of the
+  **unsuppressed** (binned) map — the pixel-noise floor. (The suppressed map is so
+  smooth its own MADN collapses and suppression residues would leak into the mask.)
+- Metric: normalized MAD of `log2(Ha/OIII)` over the mask, both channels
+  (suppressed) background-subtracted and clipped to positive values. Degenerate
+  mask (< 100 binned pixels) → SKIP with `separation=n/a`.
+- Rationale: continuum structure (star halos, galaxy body) keeps Ha proportional
+  to OIII → small spread; emission targets diverge region by region.
+- Threshold: **0.23**, calibrated on five real Seestar masters (FINDINGS.md):
+  emission C103 0.316 / M17 0.335 / M8 0.419 (EMIT) vs continuum M6 open cluster
+  0.167 / C80 globular 0.131 (SKIP); geometric mean of the nearest classes.
+  (C76 was planned as the continuum reference but no real stack exists on disk —
+  M6 + C80 replaced it.)
 - Output format (one line, parseable):
-  `PALETTES: EMIT (separation=0.42, threshold=0.15)` or
-  `PALETTES: SKIP (separation=0.06, threshold=0.15)`.
+  `PALETTES: EMIT (separation=0.316, threshold=0.23)` or
+  `PALETTES: SKIP (separation=0.167, threshold=0.23)`.
 - `--force` writes the palette files regardless of the verdict (still prints it).
 
 ## 3. Pipeline integration (`.claude/commands/seestar-pipeline.md`)
 
-- New **Step 9b — palette masters (HOO/SHO)**, after Step 9 (SPCC), before
-  Step 10 (stretch). Existing step numbers stay untouched.
+- New **Step 10 — palette masters (HOO/SHO)**, after Step 9 (SPCC). The following
+  steps are renumbered properly (per Ilia): stretch 10 → **11**, cleanup 11 → **12**,
+  and every cross-reference in the pipeline doc is updated ("Steps 4–10" ranges,
+  "Step 10/11" mentions in notes, Finish and cleanup sections).
 - Runs `tools/palette.py` on the adopted master: `<OBJECT>_final_spcc.fit`, or
   `<OBJECT>_final_solved.fit` if SPCC failed (the metric normalises per channel,
   so uncalibrated balance is acceptable). Passes `--basename <OBJECT>_final` so

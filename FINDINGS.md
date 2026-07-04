@@ -50,6 +50,22 @@ Use **GraXpert denoise**, strength **~0.3** on deep stacks. Monotonic noise↔bl
 the noise floor is already low, so blur overtakes benefit fast; raise strength only on genuinely
 noisy data. Cost is star blur (FWHM), not lost faint stars → FWHM is the guard metric.
 
+## 5. Palette gate (HOO/SHO) — `tools/palette.py`
+
+The LP filter is dual-band (Ha 656 nm + OIII ~500 nm): Ha lives in R, OIII in G+B, so every
+emission target carries free HOO/SHO palettes. The EMIT/SKIP gate = normalized MAD of
+log2(Ha/OIII) over the signal mask, **stars suppressed first** (2×2 bin + median 9, mask
+thresholded at 3× the *pixel* noise of the unsuppressed map).
+
+- **Star suppression is mandatory:** on raw star pixels the M6 open cluster scores **0.699** —
+  HIGHER than the Tarantula (0.462) — because star-colour diversity (stellar temperatures)
+  fakes emission separation. Point sources are not extended emission.
+- Measured (suppressed metric): emission C103 **0.316** / M17 **0.335** / M8 **0.419** → EMIT;
+  continuum M6 open cluster **0.167** / C80 globular **0.131** → SKIP.
+- Threshold **0.23** = geometric mean of the nearest classes (M6 0.167 ↔ C103 0.316).
+- Mask erosion was tried and rejected: it narrows the real-data gap (M17 0.335 → 0.227,
+  nearly touching the continuum class) while only helping synthetic edge cases.
+
 ## FITS headers
 
 Siril preserves the full FITS header (OBJECT, DATE-OBS, EXPTIME, INSTRUME, TELESCOP, FOCALLEN,

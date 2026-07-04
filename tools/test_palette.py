@@ -62,11 +62,42 @@ def test_load_rgb_master_rejects_mono():
             palette.load_rgb_master(p)
 
 
-def test_separation_low_for_continuum():
+def _star_field(h=200, w=150, seed=5):
+    """Isolated stars of diverse colours on a grid — point sources, no emission.
+
+    This is the M6 failure mode: star-colour diversity must not fake emission
+    separation. Point sources are not extended signal, so after star suppression
+    the mask must come up empty. (The absolute threshold for messy real fields —
+    close pairs, saturated halos — is anchored on real masters in FINDINGS.md;
+    a 200x150 toy cannot reproduce their statistics.)
+    """
+    rng = np.random.default_rng(seed)
+    r = rng.normal(0.1, 0.005, (h, w))
+    g = rng.normal(0.1, 0.005, (h, w))
+    b = rng.normal(0.1, 0.005, (h, w))
+    yy, xx = np.mgrid[0:h, 0:w]
+    for cy in (40, 100, 160):
+        for cx in (30, 75, 120):
+            amp = rng.uniform(0.3, 1.0)
+            colour = rng.uniform(0.4, 1.6)  # per-star R/(G+B), like a real HR diagram
+            star = np.exp(-((yy - cy) ** 2 + (xx - cx) ** 2) / (2 * 2.0**2))
+            r = r + amp * colour * star
+            g = g + amp * star
+            b = b + amp * star
+    return np.stack([r, g, b])
+
+
+def test_separation_skips_continuum():
     ha, oiii = palette.extract_ha_oiii(_continuum())
     sep = palette.emission_separation(ha, oiii)
-    assert sep is not None
-    assert sep < palette.SEPARATION_THRESHOLD
+    # SKIP semantics: no extended signal left (None) or spread under threshold
+    assert sep is None or sep < palette.SEPARATION_THRESHOLD
+
+
+def test_separation_ignores_star_colour_diversity():
+    ha, oiii = palette.extract_ha_oiii(_star_field())
+    # point sources are suppressed entirely: no extended signal -> degenerate mask
+    assert palette.emission_separation(ha, oiii) is None
 
 
 def test_separation_high_for_emission():
