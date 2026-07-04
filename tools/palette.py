@@ -97,3 +97,74 @@ def emission_separation(ha, oiii):
     ratio = np.log2(ha_sig[valid] / oiii_sig[valid])
     _, spread = _median_madn(ratio)
     return spread
+
+
+def compose_hoo(ha, oiii):
+    """HOO: R=Ha, G=OIII, B=OIII."""
+    return np.stack([ha, oiii, oiii]).astype(np.float32)
+
+
+def compose_sho(ha, oiii, alpha):
+    """Synthetic SHO: R=Ha, G=alpha*Ha+(1-alpha)*OIII, B=OIII (no real SII in dual-band)."""
+    return np.stack([ha, alpha * ha + (1.0 - alpha) * oiii, oiii]).astype(np.float32)
+
+
+def write_master(path, cube, header, formula):
+    """Write a linear float32 palette master, input header + WCS intact."""
+    hdr = header.copy()
+    hdr.add_history(f"palette.py: {formula}")
+    fits.writeto(path, np.clip(cube, 0.0, None).astype(np.float32), hdr, overwrite=True)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument("master", help="linear RGB FITS master (e.g. the SPCC output)")
+    ap.add_argument("--outdir", default=None, help="output dir (default: next to the input)")
+    ap.add_argument("--basename", default=None,
+                    help="output name stem (default: input filename stem)")
+    ap.add_argument("--sho-alpha", type=float, default=0.3,
+                    help="Ha fraction in the SHO green channel (default 0.3)")
+    ap.add_argument("--force", action="store_true",
+                    help="write palette masters even on a SKIP verdict")
+    ap.add_argument("--metric-only", action="store_true",
+                    help="print the verdict only, write nothing")
+    args = ap.parse_args(argv)
+
+    rgb, header = load_rgb_master(args.master)
+    ha, oiii = extract_ha_oiii(rgb)
+    separation = emission_separation(ha, oiii)
+    if separation is None:
+        emit = False
+        print(f"PALETTES: SKIP (separation=n/a, threshold={SEPARATION_THRESHOLD:g})"
+              " — no usable signal mask")
+    else:
+        emit = separation >= SEPARATION_THRESHOLD
+        verdict = "EMIT" if emit else "SKIP"
+        print(f"PALETTES: {verdict} (separation={separation:.3f},"
+              f" threshold={SEPARATION_THRESHOLD:g})")
+
+    if args.metric_only or (not emit and not args.force):
+        return
+
+    outdir = args.outdir or os.path.dirname(os.path.abspath(args.master))
+    os.makedirs(outdir, exist_ok=True)
+    base = args.basename or os.path.splitext(os.path.basename(args.master))[0]
+    ha_n, oiii_n, _ = neutralize_background(ha, oiii)
+    alpha = args.sho_alpha
+
+    hoo_path = os.path.join(outdir, f"{base}_HOO.fit")
+    write_master(hoo_path, compose_hoo(ha_n, oiii_n), header,
+                 "HOO: R=Ha(R), G=B=OIII((G+B)/2), bg-neutralized, linear")
+    print(f"wrote: {hoo_path}")
+
+    sho_path = os.path.join(outdir, f"{base}_SHO.fit")
+    write_master(sho_path, compose_sho(ha_n, oiii_n, alpha), header,
+                 f"SHO: R=Ha, G={alpha:g}*Ha+{1 - alpha:g}*OIII, B=OIII,"
+                 " bg-neutralized, linear")
+    print(f"wrote: {sho_path}")
+
+
+if __name__ == "__main__":
+    main()

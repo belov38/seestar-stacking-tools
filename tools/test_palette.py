@@ -81,3 +81,82 @@ def test_separation_none_for_empty_field():
     flat = rng.normal(0.1, 0.005, (3, 120, 90))  # noise only, no signal above bg+3sigma
     ha, oiii = palette.extract_ha_oiii(flat)
     assert palette.emission_separation(ha, oiii) is None
+
+
+def test_cli_emission_emits_both_masters(capsys):
+    with tempfile.TemporaryDirectory() as d:
+        src = os.path.join(d, "master.fit")
+        hdr = fits.Header({"OBJECT": "TEST", "CRVAL1": 84.67, "CRVAL2": -69.1, "LIVETIME": 3600.0})
+        _write(src, _emission(), hdr)
+        palette.main([src, "--outdir", d, "--basename", "TEST_final"])
+        out = capsys.readouterr().out
+        assert "PALETTES: EMIT" in out
+        hoo_path = os.path.join(d, "TEST_final_HOO.fit")
+        sho_path = os.path.join(d, "TEST_final_SHO.fit")
+        assert os.path.exists(hoo_path) and os.path.exists(sho_path)
+        with fits.open(hoo_path) as h:
+            hoo, hoo_hdr = h[0].data, h[0].header
+        # channel mapping: R carries the Ha blob, G and B carry the OIII blob
+        assert hoo[0, 60, 40] > hoo[0, 140, 100]
+        assert hoo[1, 140, 100] > hoo[1, 60, 40]
+        assert np.array_equal(hoo[1], hoo[2])
+        # sanity: float32 (FITS stores big-endian), finite, non-negative
+        assert hoo.dtype.kind == "f" and hoo.dtype.itemsize == 4
+        assert np.isfinite(hoo).all() and (hoo >= 0).all()
+        # header + WCS preserved, HISTORY added
+        assert hoo_hdr["OBJECT"] == "TEST" and abs(hoo_hdr["CRVAL1"] - 84.67) < 1e-9
+        assert any("palette.py" in str(c) for c in hoo_hdr.get("HISTORY", []))
+
+
+def test_cli_sho_green_is_blend():
+    with tempfile.TemporaryDirectory() as d:
+        src = os.path.join(d, "master.fit")
+        _write(src, _emission())
+        palette.main([src, "--outdir", d, "--basename", "T", "--sho-alpha", "0.3"])
+        with fits.open(os.path.join(d, "T_SHO.fit")) as h:
+            sho = h[0].data.astype(np.float64)
+        # at the Ha blob, G carries alpha*Ha: above background but below R
+        bg = np.median(sho[1])
+        assert sho[1, 60, 40] > bg + 0.1
+        assert sho[1, 60, 40] < sho[0, 60, 40]
+        # B has no Ha contribution at the Ha blob
+        assert sho[2, 60, 40] < bg + 0.1
+
+
+def test_cli_continuum_skips_without_files(capsys):
+    with tempfile.TemporaryDirectory() as d:
+        src = os.path.join(d, "master.fit")
+        _write(src, _continuum())
+        palette.main([src, "--outdir", d, "--basename", "T"])
+        assert "PALETTES: SKIP" in capsys.readouterr().out
+        assert not os.path.exists(os.path.join(d, "T_HOO.fit"))
+        assert not os.path.exists(os.path.join(d, "T_SHO.fit"))
+
+
+def test_cli_force_writes_on_skip():
+    with tempfile.TemporaryDirectory() as d:
+        src = os.path.join(d, "master.fit")
+        _write(src, _continuum())
+        palette.main([src, "--outdir", d, "--basename", "T", "--force"])
+        assert os.path.exists(os.path.join(d, "T_HOO.fit"))
+        assert os.path.exists(os.path.join(d, "T_SHO.fit"))
+
+
+def test_cli_metric_only_writes_nothing(capsys):
+    with tempfile.TemporaryDirectory() as d:
+        src = os.path.join(d, "master.fit")
+        _write(src, _emission())
+        palette.main([src, "--outdir", d, "--basename", "T", "--metric-only"])
+        assert "PALETTES: EMIT" in capsys.readouterr().out
+        assert not os.path.exists(os.path.join(d, "T_HOO.fit"))
+
+
+def test_cli_empty_field_skips_gracefully(capsys):
+    with tempfile.TemporaryDirectory() as d:
+        src = os.path.join(d, "master.fit")
+        rng = np.random.default_rng(3)
+        _write(src, rng.normal(0.1, 0.005, (3, 120, 90)))
+        palette.main([src, "--outdir", d, "--basename", "T"])
+        out = capsys.readouterr().out
+        assert "PALETTES: SKIP" in out and "separation=n/a" in out
+        assert not os.path.exists(os.path.join(d, "T_HOO.fit"))
