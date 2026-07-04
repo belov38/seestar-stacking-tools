@@ -7,7 +7,7 @@ carries a strong colour cast, so most of the signal you actually captured stays 
 toolkit re-processes the *same* sub-frames step by step, measuring each step objectively, to
 recover the detail and colour that are already in the data.
 
-Two targets, same Seestar frames — **left → right** (stacks top → bottom on narrow screens):
+Three targets, same Seestar frames — **left → right** (stacks top → bottom on narrow screens):
 straight out of the Seestar app · <code>/seestar-pipeline</code> auto linear master + star-zoom QA
 crops · final manual stretch.
 
@@ -24,6 +24,13 @@ crops · final manual stretch.
   <img src="img/c103/final-postprocessed.jpg" height="340" alt="Final hand-stretched result">
 </p>
 <p align="center"><sub><b>C103 / NGC 2070 — Tarantula Nebula</b></sub></p>
+
+<p align="center">
+  <img src="img/ngc292/seestar-raw.jpg" height="340" alt="Raw Seestar in-app preview">
+  <img src="img/ngc292/pipeline-auto.png" height="340" alt="Pipeline automatic linear master with star-zoom QA crops">
+  <img src="img/ngc292/final-postprocessed.jpg" height="340" alt="Final hand-stretched result">
+</p>
+<p align="center"><sub><b>NGC 292 — Small Magellanic Cloud</b></sub></p>
 
 
 ## What it is
@@ -172,7 +179,7 @@ stretch (manual). Each skill has a `SKILL.md` (when/how + variant guidance), a r
 (lights → stack first; single FITS → ready stack), gate frame quality before stacking
 (score every sub for clouds / haze / defocus / trails, quarantine on approval), run the
 four skill steps above, then plate-solve and SPCC-colour-calibrate the linear master
-(Siril, Seestar S30 sensor + LP-filter profiles), derive HOO/SHO palette masters when
+(Siril, Seestar S30 sensor + LP-filter profiles), derive an HOO palette master when
 the target shows real Ha/OIII emission separation (measured, auto-skipped for
 clusters/galaxies), and finish with an autostretch preview.
 Each step's parameters are picked by measurement; it **stops to ask only when a choice is
@@ -198,10 +205,11 @@ to the input; at the end the pipeline offers to delete the heavy intermediates.
   (background / star count / FWHM / roundness → CLOUD / HAZY / SOFT / TRAILED, robust
   per-exposure-group thresholds). Backs the pipeline's frame quality gate; `--move`
   quarantines flagged subs (moves, never deletes).
-- `tools/palette.py MASTER.fit [--outdir DIR --basename NAME]` — dual-band palette
-  masters from an LP-filter RGB master: splits Ha (R) / OIII (G+B), gates on a measured
+- `tools/palette.py MASTER.fit [--outdir DIR --basename NAME]` — dual-band HOO palette
+  master from an LP-filter RGB master: splits Ha (R) / OIII (G+B), gates on a measured
   emission-separation metric (EMIT/SKIP, stars suppressed first — star colours fake
-  separation otherwise), writes linear `*_HOO.fit` + `*_SHO.fit` with header/WCS intact.
+  separation otherwise), writes a linear `*_HOO.fit` with header/WCS intact. HOO only:
+  the filter has no SII line, so a synthetic "SHO" adds no information (dropped).
   Backs the pipeline's Step 10.
 - `tools/astrobin_session_csv.py LIGHTS --out acquisition.csv` — scans the lights and emits
   the AstroBin acquisition-sessions import CSV (groups subs into observing nights by the

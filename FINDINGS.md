@@ -50,10 +50,13 @@ Use **GraXpert denoise**, strength **~0.3** on deep stacks. Monotonic noise↔bl
 the noise floor is already low, so blur overtakes benefit fast; raise strength only on genuinely
 noisy data. Cost is star blur (FWHM), not lost faint stars → FWHM is the guard metric.
 
-## 5. Palette gate (HOO/SHO) — `tools/palette.py`
+## 5. Palette gate (HOO) — `tools/palette.py`
 
 The LP filter is dual-band (Ha 656 nm + OIII ~500 nm): Ha lives in R, OIII in G+B, so every
-emission target carries free HOO/SHO palettes. The EMIT/SKIP gate = normalized MAD of
+emission target carries a free HOO palette. **HOO only:** the filter passes no SII (672 nm),
+so a "SHO" from this data can only synthesize its S channel out of Ha — a colour remap with
+zero new information. We emitted a synthetic SHO until 2026-07-04; dropped per Ilia — the
+honest dual-band palette is HOO. The EMIT/SKIP gate = normalized MAD of
 log2(Ha/OIII) over the signal mask, **stars suppressed first** (2×2 bin + median 9, mask
 thresholded at 3× the *pixel* noise of the unsuppressed map).
 

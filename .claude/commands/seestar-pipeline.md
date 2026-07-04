@@ -1,5 +1,5 @@
 ---
-description: Run a Seestar S30 frame through the full processing pipeline (explore → frame quality gate → stack → background → deconv → denoise → plate-solve → SPCC colour calibration → HOO/SHO palettes → stretch), auto-picking parameters by measurement, stopping only when a choice is doubtful, emitting AstroBin title/description + acquisition CSV, and offering an optional cleanup of intermediate files at the end.
+description: Run a Seestar S30 frame through the full processing pipeline (explore → frame quality gate → stack → background → deconv → denoise → plate-solve → SPCC colour calibration → HOO palette → stretch), auto-picking parameters by measurement, stopping only when a choice is doubtful, emitting AstroBin title/description + acquisition CSV, and offering an optional cleanup of intermediate files at the end.
 argument-hint: <lights-dir | stack.fits>
 ---
 
@@ -137,7 +137,7 @@ the **universal rule** (FITS + PNG + `validate here:`).
 | 7 | `seestar-denoise-compare` | `04_denoise/` | strongest setting with FWHM Δ < ~3% **and** faint_keep > ~0.85 | even the lowest strength over-blurs → propose **skip denoise** |
 | 8 | *(plate-solve — Siril, no skill)* | `05_stretch/` | always solve the final master (skip if already `PLTSOLVD`) | **warn + continue** if the solve fails (e.g. no internet) — keep the unsolved master |
 | 9 | *(SPCC colour calibration — Siril, no skill)* | `05_stretch/` | SPCC reports `succeeded` and the star-core G/R moves toward 1 — auto-adopt the calibrated master | **warn + continue** if SPCC fails (no internet / no `siril-spcc-database`) — keep the un-calibrated solved master |
-| 10 | *(palette masters HOO/SHO — `tools/palette.py`, no skill)* | `05_stretch/` | always — EMIT or SKIP decided by the emission-separation metric; log either way | never |
+| 10 | *(palette master HOO — `tools/palette.py`, no skill)* | `05_stretch/` | always — EMIT or SKIP decided by the emission-separation metric; log either way | never |
 | 11 | *(stretch — manual, no skill)* | `05_stretch/` | — | **always present** the final result (stretch is the user's call) |
 
 Notes per step:
@@ -189,21 +189,22 @@ Notes per step:
   luminance) and log the G/R move toward ~1 (e.g. 1.66 → 1.09) as the verdict. The adopted SPCC
   master `<OBJECT>_final_spcc.fit` becomes the deliverable carried into Steps 10–11; keep the
   pre-SPCC `<OBJECT>_final_solved.fit` too.
-- **Step 10 (palette masters HOO/SHO):** the LP filter is dual-band (Ha 656 nm + OIII ~500 nm),
+- **Step 10 (palette master HOO):** the LP filter is dual-band (Ha 656 nm + OIII ~500 nm),
   so an emission target carries a second free palette in the same data (Ha lives in R, OIII in
-  G+B). Run on the adopted master — `<OBJECT>_final_spcc.fit`, or `<OBJECT>_final_solved.fit`
+  G+B). HOO is the **only** palette emitted — there is no SII line in the filter, so a
+  synthetic "SHO" would carry zero new information (we used to emit one; dropped by decision).
+  Run on the adopted master — `<OBJECT>_final_spcc.fit`, or `<OBJECT>_final_solved.fit`
   if SPCC failed:
   ```
   .venv/bin/python tools/palette.py 05_stretch/<OBJECT>_final_spcc.fit \
     --outdir 05_stretch --basename <OBJECT>_final
   ```
   It prints one parseable line: `PALETTES: EMIT (separation=..., threshold=...)` or
-  `PALETTES: SKIP (...)`. On **EMIT** it writes `<OBJECT>_final_HOO.fit` (R=Ha, G=B=OIII) and
-  `<OBJECT>_final_SHO.fit` (synthetic SHO, golden Ha after stretch) — linear, header + WCS
-  intact, stretch-ready like the SPCC master. Render a preview PNG for each with
-  `tools/preview.py` (no `--ref`) into **`05_stretch/`** (not `previews/` — they must survive
-  Step 12 cleanup) as `05_stretch/<OBJECT>_final_HOO.png` / `<OBJECT>_final_SHO.png`, and drop
-  the `validate here:` lines for both. On **SKIP** (continuum target — cluster/galaxy: star
+  `PALETTES: SKIP (...)`. On **EMIT** it writes `<OBJECT>_final_HOO.fit` (R=Ha, G=B=OIII) —
+  linear, header + WCS intact, stretch-ready like the SPCC master. Render a preview PNG with
+  `tools/preview.py` (no `--ref`) into **`05_stretch/`** (not `previews/` — it must survive
+  Step 12 cleanup) as `05_stretch/<OBJECT>_final_HOO.png`, and drop
+  the `validate here:` line. On **SKIP** (continuum target — cluster/galaxy: star
   colours, not emission; the gate suppresses stars before measuring, see FINDINGS.md) log the
   verdict line with the measured separation to REPORT.md and move on. This step is always
   AUTO — never stop to ask; log the verdict to REPORT.md in both cases.
@@ -262,11 +263,11 @@ When Step 11 is done, produce the publication deliverables, then summarize.
    if it differs), date range, and the **actual processing chain you logged** (stack params →
    GraXpert AI bg → Siril RL params → GraXpert denoise strength → plate-solved → SPCC colour
    calibration: `Sony IMX585` + `ZWO Seestar LP`). If Step 10 emitted, mention the available
-   HOO/SHO palette masters in the description.
+   HOO palette master in the description.
 3. **Copy the deliverables next to the input** so the user finds them with their data — into
    `DATADIR` (the parent of `LIGHTS/`, or beside the input FITS): the calibrated master
    `<OBJECT>_final_spcc.fit` (and `<OBJECT>_final_solved.fit` if SPCC ran — the pre-SPCC version),
-   the palette masters `<OBJECT>_final_HOO.fit` + `<OBJECT>_final_SHO.fit` and their PNGs
+   the palette master `<OBJECT>_final_HOO.fit` and its PNG
    (if Step 10 emitted), `<OBJECT>_astrobin.txt`, `<OBJECT>_astrobin_acquisition.csv`,
    `<OBJECT>_final_stretch.png`.
 
@@ -288,8 +289,8 @@ explicit confirmation.
    ```
 2. **State exactly what stays vs goes:**
    - **Keep:** `05_stretch/` (SPCC-calibrated master `<OBJECT>_final_spcc.fit`, the pre-SPCC
-     `<OBJECT>_final_solved.fit`, the palette masters `<OBJECT>_final_HOO.fit` /
-     `<OBJECT>_final_SHO.fit` + their PNGs when Step 10 emitted, the final autostretch PNG
+     `<OBJECT>_final_solved.fit`, the palette master `<OBJECT>_final_HOO.fit` +
+     its PNG when Step 10 emitted, the final autostretch PNG
      `<OBJECT>_final_stretch.png`, `astrobin.txt`, `astrobin_acquisition.csv`), `REPORT.md`,
      and the deliverable **copies in `DATADIR`**. The final stretch preview and the palette
      previews live here (in `05_stretch/`, not `previews/`), so removing `previews/` never

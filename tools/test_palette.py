@@ -1,4 +1,4 @@
-"""Tests for palette.py: dual-band Ha/OIII extraction, gate metric, HOO/SHO composition."""
+"""Tests for palette.py: dual-band Ha/OIII extraction, gate metric, HOO composition."""
 import os
 import tempfile
 
@@ -114,7 +114,7 @@ def test_separation_none_for_empty_field():
     assert palette.emission_separation(ha, oiii) is None
 
 
-def test_cli_emission_emits_both_masters(capsys):
+def test_cli_emission_emits_hoo_master(capsys):
     with tempfile.TemporaryDirectory() as d:
         src = os.path.join(d, "master.fit")
         hdr = fits.Header({"OBJECT": "TEST", "CRVAL1": 84.67, "CRVAL2": -69.1, "LIVETIME": 3600.0})
@@ -123,8 +123,7 @@ def test_cli_emission_emits_both_masters(capsys):
         out = capsys.readouterr().out
         assert "PALETTES: EMIT" in out
         hoo_path = os.path.join(d, "TEST_final_HOO.fit")
-        sho_path = os.path.join(d, "TEST_final_SHO.fit")
-        assert os.path.exists(hoo_path) and os.path.exists(sho_path)
+        assert os.path.exists(hoo_path)
         with fits.open(hoo_path) as h:
             hoo, hoo_hdr = h[0].data, h[0].header
         # channel mapping: R carries the Ha blob, G and B carry the OIII blob
@@ -139,21 +138,6 @@ def test_cli_emission_emits_both_masters(capsys):
         assert any("palette.py" in str(c) for c in hoo_hdr.get("HISTORY", []))
 
 
-def test_cli_sho_green_is_blend():
-    with tempfile.TemporaryDirectory() as d:
-        src = os.path.join(d, "master.fit")
-        _write(src, _emission())
-        palette.main([src, "--outdir", d, "--basename", "T", "--sho-alpha", "0.3"])
-        with fits.open(os.path.join(d, "T_SHO.fit")) as h:
-            sho = h[0].data.astype(np.float64)
-        # at the Ha blob, G carries alpha*Ha: above background but below R
-        bg = np.median(sho[1])
-        assert sho[1, 60, 40] > bg + 0.1
-        assert sho[1, 60, 40] < sho[0, 60, 40]
-        # B has no Ha contribution at the Ha blob
-        assert sho[2, 60, 40] < bg + 0.1
-
-
 def test_cli_continuum_skips_without_files(capsys):
     with tempfile.TemporaryDirectory() as d:
         src = os.path.join(d, "master.fit")
@@ -161,7 +145,6 @@ def test_cli_continuum_skips_without_files(capsys):
         palette.main([src, "--outdir", d, "--basename", "T"])
         assert "PALETTES: SKIP" in capsys.readouterr().out
         assert not os.path.exists(os.path.join(d, "T_HOO.fit"))
-        assert not os.path.exists(os.path.join(d, "T_SHO.fit"))
 
 
 def test_cli_force_writes_on_skip():
@@ -170,7 +153,6 @@ def test_cli_force_writes_on_skip():
         _write(src, _continuum())
         palette.main([src, "--outdir", d, "--basename", "T", "--force"])
         assert os.path.exists(os.path.join(d, "T_HOO.fit"))
-        assert os.path.exists(os.path.join(d, "T_SHO.fit"))
 
 
 def test_cli_metric_only_writes_nothing(capsys):

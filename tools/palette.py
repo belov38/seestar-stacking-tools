@@ -1,14 +1,17 @@
 #!/usr/bin/env python
-"""Dual-band palette masters (HOO / synthetic SHO) from a Seestar LP-filter RGB master.
+"""Dual-band HOO palette master from a Seestar LP-filter RGB master.
 
 The Seestar LP filter is dual-band: it passes only Ha (656 nm) and OIII (~500 nm).
 On the IMX585 OSC sensor the red channel carries Ha; green and blue carry OIII
 (green leaks ~10-15% of Ha). This tool splits a linear RGB master into Ha/OIII,
 measures whether the target actually shows emission-line separation, and (on EMIT)
-writes linear, stretch-ready palette masters with the input header + WCS intact:
+writes a linear, stretch-ready palette master with the input header + WCS intact:
 
   <base>_HOO.fit   R=Ha, G=OIII, B=OIII               (red hydrogen / teal oxygen)
-  <base>_SHO.fit   R=Ha, G=a*Ha+(1-a)*OIII, B=OIII    (synthetic Hubble-style; a=0.3)
+
+HOO is the only honest palette for dual-band data: there is no SII line in the
+filter, so an "SHO" would have to synthesize its S channel out of Ha — zero new
+information, just a colour remap. We used to emit one; dropped by decision.
 
 The EMIT/SKIP gate measures the log2(Ha/OIII) spread over the extended (star-
 suppressed) signal: emission targets diverge region by region, while continuum
@@ -20,8 +23,7 @@ star-colour diversity fakes separation. Verdict line (parseable, exit code 0):
   PALETTES: SKIP (separation=0.167, threshold=0.23)
 
 Usage:
-  palette.py MASTER.fit [--outdir DIR] [--basename NAME] [--sho-alpha 0.3]
-             [--force] [--metric-only]
+  palette.py MASTER.fit [--outdir DIR] [--basename NAME] [--force] [--metric-only]
 """
 import argparse
 import os
@@ -132,11 +134,6 @@ def compose_hoo(ha, oiii):
     return np.stack([ha, oiii, oiii]).astype(np.float32)
 
 
-def compose_sho(ha, oiii, alpha):
-    """Synthetic SHO: R=Ha, G=alpha*Ha+(1-alpha)*OIII, B=OIII (no real SII in dual-band)."""
-    return np.stack([ha, alpha * ha + (1.0 - alpha) * oiii, oiii]).astype(np.float32)
-
-
 def write_master(path, cube, header, formula):
     """Write a linear float32 palette master, input header + WCS intact."""
     hdr = header.copy()
@@ -152,8 +149,6 @@ def main(argv=None):
     ap.add_argument("--outdir", default=None, help="output dir (default: next to the input)")
     ap.add_argument("--basename", default=None,
                     help="output name stem (default: input filename stem)")
-    ap.add_argument("--sho-alpha", type=float, default=0.3,
-                    help="Ha fraction in the SHO green channel (default 0.3)")
     ap.add_argument("--force", action="store_true",
                     help="write palette masters even on a SKIP verdict")
     ap.add_argument("--metric-only", action="store_true",
@@ -180,18 +175,11 @@ def main(argv=None):
     os.makedirs(outdir, exist_ok=True)
     base = args.basename or os.path.splitext(os.path.basename(args.master))[0]
     ha_n, oiii_n, _ = neutralize_background(ha, oiii)
-    alpha = args.sho_alpha
 
     hoo_path = os.path.join(outdir, f"{base}_HOO.fit")
     write_master(hoo_path, compose_hoo(ha_n, oiii_n), header,
                  "HOO: R=Ha(R), G=B=OIII((G+B)/2), bg-neutralized, linear")
     print(f"wrote: {hoo_path}")
-
-    sho_path = os.path.join(outdir, f"{base}_SHO.fit")
-    write_master(sho_path, compose_sho(ha_n, oiii_n, alpha), header,
-                 f"SHO: R=Ha, G={alpha:g}*Ha+{1 - alpha:g}*OIII, B=OIII,"
-                 " bg-neutralized, linear")
-    print(f"wrote: {sho_path}")
 
 
 if __name__ == "__main__":
