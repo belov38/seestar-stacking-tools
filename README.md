@@ -176,12 +176,15 @@ stretch (manual). Each skill has a `SKILL.md` (when/how + variant guidance), a r
 ### Run the whole pipeline: `/seestar-pipeline`
 
 `/seestar-pipeline <lights-dir | stack.fits>` runs the full chain: explore the input
-(lights → stack first; single FITS → ready stack), gate frame quality before stacking
-(score every sub for clouds / haze / defocus / trails, quarantine on approval), run the
-four skill steps above, then plate-solve and SPCC-colour-calibrate the linear master
-(Siril, Seestar S30 sensor + LP-filter profiles), derive an HOO palette master when
-the target shows real Ha/OIII emission separation (measured, auto-skipped for
-clusters/galaxies), and finish with an autostretch preview.
+(lights → stack first; single FITS → ready stack), route by filter (LP vs IRCUT sets are
+spectrally incompatible — mixed sets split into separate runs), gate frame quality before
+stacking (score every sub for clouds / haze / defocus / trails, quarantine on approval),
+run the four skill steps above, then plate-solve and SPCC-colour-calibrate the linear
+master (Siril, Seestar S30 sensor + the run's filter profile), derive an HOO palette
+master when the target shows real Ha/OIII emission separation (measured, auto-skipped for
+clusters/galaxies; LP runs only), and finish with an autostretch preview. When both an LP
+and an IRCUT master of the object exist, it offers the LP+IRCUT composite
+(`tools/composite.py`).
 Each step's parameters are picked by measurement; it **stops to ask only when a choice is
 doubtful** (deconv rings, backfired background, volatile star-weighted stack) — plus always
 at the frame quality gate, since dropping frames is the user's call.
@@ -203,17 +206,25 @@ to the input; at the end the pipeline offers to delete the heavy intermediates.
   validation gate.
 - `tools/score_subs.py LIGHTS [--move CLASSES --aside-dir DIR]` — per-frame quality scorer
   (background / star count / FWHM / roundness → CLOUD / HAZY / SOFT / TRAILED, robust
-  per-exposure-group thresholds). Backs the pipeline's frame quality gate; `--move`
+  thresholds per exposure+filter group). Backs the pipeline's frame quality gate; `--move`
   quarantines flagged subs (moves, never deletes).
 - `tools/palette.py MASTER.fit [--outdir DIR --basename NAME]` — dual-band HOO palette
   master from an LP-filter RGB master: splits Ha (R) / OIII (G+B), gates on a measured
   emission-separation metric (EMIT/SKIP, stars suppressed first — star colours fake
   separation otherwise), writes a linear `*_HOO.fit` with header/WCS intact. HOO only:
   the filter has no SII line, so a synthetic "SHO" adds no information (dropped).
-  Backs the pipeline's Step 10.
+  LP masters only — a broadband (IRCUT) master hard-skips. Backs the pipeline's Step 10.
+- `tools/composite.py LP.fit IRCUT.fit [--mode align|hargb]` — LP+IRCUT composite: WCS-
+  reprojects the IRCUT (broadband) master onto the LP master's pixel grid — the aligned
+  result is a natural-star-colour layer for star recomposition over a starless LP/HOO
+  stretch (the LP filter guts stellar continuum; IRCUT keeps it honest). `--mode hargb`
+  adds continuum-subtracted Ha (`Ha = LP_R − k·IRCUT_R`) and an HaRGB blend. Both inputs
+  must be plate-solved. Backs the pipeline's optional Step 12.
 - `tools/astrobin_session_csv.py LIGHTS --out acquisition.csv` — scans the lights and emits
   the AstroBin acquisition-sessions import CSV (groups subs into observing nights by the
-  local filename timestamp; fills date / count / duration / binning / gain / filter).
+  local filename timestamp, one row per night+filter; fills date / count / duration /
+  binning / gain, and maps the sub filter to the S30 Pro AstroBin IDs — LP 40954,
+  IRCUT 42307).
 
 ## Setup (manual)
 

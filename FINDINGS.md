@@ -69,6 +69,27 @@ thresholded at 3× the *pixel* noise of the unsuppressed map).
 - Mask erosion was tried and rejected: it narrows the real-data gap (M17 0.335 → 0.227,
   nearly touching the continuum class) while only helping synthetic edge cases.
 
+## 6. LP vs IRCUT — two-filter datasets
+
+The S30 Pro switches between two filters, and every sub is tagged (`_LP_`/`_IRCUT_` in the
+filename, `FILTER` in the header — the keyword survives all the way into the Siril master).
+**Never stack the two together:** they are spectrally incompatible in one stack — per-frame
+normalization fits a different sky, rejection sees the other filter's frames as outliers, and
+SPCC has no profile for the mixture. The pipeline routes them into separate runs (Step 1) and
+keeps two masters.
+
+- **SPCC profiles:** LP → `ZWO Seestar LP`; IRCUT → the generic `UV/IR Block` profile (the
+  SPCC DB has no Seestar-specific IRCUT entry and needs none — the IRCUT position is a plain
+  UV/IR window). AstroBin filter IDs: LP 40954, IRCUT 42307.
+- **Palette is LP-only:** on broadband data R vs G+B is not Ha vs OIII, yet Ha still lands in
+  R — an emission target can *fake* a plausible separation score, so the gate must not be
+  trusted there; `palette.py` hard-skips any master whose `FILTER` is not LP.
+- **Combine after the fact** (`tools/composite.py`, both masters plate-solved): WCS-reproject
+  IRCUT onto the LP grid. ~40 min of IRCUT already makes a **natural-star-colour layer**
+  (stars need little SNR; LP guts stellar continuum — LP star cores come out Ha-red).
+  A continuum-subtracted **HaRGB** (`Ha = LP_R − k·IRCUT_R`, k = median flux ratio on bright
+  continuum pixels) needs **hours** of IRCUT — the broadband base must stand on its own.
+
 ## FITS headers
 
 Siril preserves the full FITS header (OBJECT, DATE-OBS, EXPTIME, INSTRUME, TELESCOP, FOCALLEN,

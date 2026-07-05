@@ -13,6 +13,12 @@ HOO is the only honest palette for dual-band data: there is no SII line in the
 filter, so an "SHO" would have to synthesize its S channel out of Ha — zero new
 information, just a colour remap. We used to emit one; dropped by decision.
 
+LP masters only: on a broadband (IRCUT) master the R vs G+B split is not
+Ha vs OIII — yet Ha still lands in R, so an emission target can fake a
+plausible separation score. A master whose FILTER header is not LP is
+therefore hard-skipped, and --force does not override (there is nothing
+physically meaningful to write).
+
 The EMIT/SKIP gate measures the log2(Ha/OIII) spread over the extended (star-
 suppressed) signal: emission targets diverge region by region, while continuum
 targets (clusters, galaxies) stay proportional -> SKIP (a palette of a continuum
@@ -156,6 +162,11 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     rgb, header = load_rgb_master(args.master)
+    filt = str(header.get("FILTER", "")).strip().upper()
+    if filt and filt != "LP":
+        print(f"PALETTES: SKIP (filter={filt} — dual-band split needs the LP filter;"
+              " a broadband master has no Ha/OIII channels)")
+        return
     ha, oiii = extract_ha_oiii(rgb)
     separation = emission_separation(ha, oiii)
     if separation is None:

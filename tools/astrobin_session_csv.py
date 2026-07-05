@@ -17,10 +17,13 @@ plus `--utc-offset-hours`.
 Columns (https://welcome.astrobin.com/importing-acquisitions-from-csv):
     date,filter,number,duration,iso,binning,gain,sensorCooling,fNumber,
     darks,flats,flatDarks,bias,bortle,meanSqm,meanFwhm,temperature
-Only `number` and `duration` are mandatory. `filter` is an AstroBin numeric filter ID;
-it defaults to the Seestar's fixed integrated LP filter (override with --filter-id, or
---filter-id 0 to leave it blank). Seestar calibrates on-device, so darks/flats/bias are
-left blank rather than asserting 0.
+Only `number` and `duration` are mandatory. `filter` is an AstroBin numeric filter ID,
+auto-detected per sub from the filename token (`_LP_` / `_IRCUT_`; header FILTER as
+fallback) and mapped to the S30 Pro integrated filters' AstroBin IDs. Sessions are
+grouped by (night, filter), so a mixed night yields one honest row per filter.
+Override with --filter-id N (forces one ID on every row) or --filter-id 0 (blank).
+Seestar calibrates on-device, so darks/flats/bias are left blank rather than
+asserting 0.
 
 Usage:
     astrobin_session_csv.py <lights-dir> [--out FILE] [--night-shift-hours 12]
@@ -44,13 +47,26 @@ COLUMNS = [
     "bortle", "meanSqm", "meanFwhm", "temperature",
 ]
 
-# AstroBin equipment-DB ID for the Seestar's fixed integrated LP filter
-# (https://app.astrobin.com/equipment/explorer/filter/40954/zwo-seestar-s30-pro-integrated-lp-filter).
-# The filter is built into the scope, so this is a constant for every Seestar session.
-SEESTAR_LP_FILTER_ID = 40954
+# AstroBin equipment-DB IDs for the S30 Pro's integrated (switchable) filters:
+# LP    https://app.astrobin.com/equipment/explorer/filter/40954/zwo-seestar-s30-pro-integrated-lp-filter
+# IRCUT https://app.astrobin.com/equipment/explorer/filter/42307 (Integrated UV/IR Cut Filter)
+# Both are built into the scope, so these are constants for every Seestar session.
+SEESTAR_FILTER_IDS = {"LP": 40954, "IRCUT": 42307}
 
 # Seestar local timestamp in the filename, e.g. Light_C 103_30.0s_LP_20260617-205453.fit
 _FNAME_TS = re.compile(r"_(\d{8})-(\d{6})\.fit$", re.IGNORECASE)
+
+# Filter token between exposure and timestamp, e.g. _30.0s_IRCUT_20260627-060233.fit
+_FNAME_FILTER = re.compile(r"\ds_([A-Za-z0-9]+)_\d{8}-\d{6}\.fit$", re.IGNORECASE)
+
+
+def sub_filter(path, header):
+    """Filter name for a sub: filename token first, header FILTER as fallback."""
+    m = _FNAME_FILTER.search(os.path.basename(path))
+    if m:
+        return m.group(1).upper()
+    filt = header.get("FILTER")
+    return str(filt).strip().upper() if filt else ""
 
 
 def resolve_lights_dir(path):
@@ -111,7 +127,7 @@ def collect_sessions(lights_dir, night_shift_hours, utc_offset_hours):
             skipped += 1
             continue
         night = (lt - timedelta(hours=night_shift_hours)).date().isoformat()
-        s = sessions[night]
+        s = sessions[(night, sub_filter(f, h))]
         s["n"] += 1
         s["exptime"].append(h.get("EXPTIME") or h.get("EXPOSURE"))
         s["gain"].append(h.get("GAIN"))
@@ -120,17 +136,25 @@ def collect_sessions(lights_dir, night_shift_hours, utc_offset_hours):
     return sessions, len(files), skipped
 
 
+def filter_cell(filt, args):
+    """AstroBin filter ID for a row: --filter-id override, else auto by name."""
+    if args.filter_id is not None:
+        return str(args.filter_id) if args.filter_id else ""
+    fid = SEESTAR_FILTER_IDS.get(filt)
+    return str(fid) if fid else ""
+
+
 def build_rows(sessions, args):
     rows = []
-    for night in sorted(sessions):
-        s = sessions[night]
+    for night, filt in sorted(sessions):
+        s = sessions[(night, filt)]
         ccd = [t for t in s["ccdtemp"] if t is not None]
         sensor_cooling = ""
         if args.sensor_temp and ccd:
             sensor_cooling = str(round(sum(ccd) / len(ccd)))
         rows.append({
             "date": night,
-            "filter": str(args.filter_id) if args.filter_id else "",
+            "filter": filter_cell(filt, args),
             "number": str(s["n"]),
             "duration": _num(_mode(s["exptime"])),
             "iso": "",
@@ -156,10 +180,10 @@ def main(argv=None):
                     help="hours to subtract from local time before taking the night date (default 12)")
     ap.add_argument("--utc-offset-hours", type=float, default=0.0,
                     help="offset added to DATE-OBS when filename has no local timestamp")
-    ap.add_argument("--filter-id", type=int, default=SEESTAR_LP_FILTER_ID,
-                    help=f"AstroBin numeric filter ID from the filter's equipment URL "
-                         f"(default {SEESTAR_LP_FILTER_ID}, the Seestar integrated LP filter; "
-                         f"pass 0 to leave blank)")
+    ap.add_argument("--filter-id", type=int, default=None,
+                    help="force one AstroBin filter ID on every row (default: auto by "
+                         f"the sub's filter — LP {SEESTAR_FILTER_IDS['LP']}, "
+                         f"IRCUT {SEESTAR_FILTER_IDS['IRCUT']}; pass 0 to leave blank)")
     ap.add_argument("--bortle", type=int, default=None)
     ap.add_argument("--sqm", type=float, default=None)
     ap.add_argument("--fwhm", type=float, default=None)
@@ -193,13 +217,20 @@ def main(argv=None):
     print(f"\n[astrobin-csv] {len(rows)} session(s), {total_subs} subs, "
           f"{total_h:.2f} h total" + (f"  (skipped {skipped})" if skipped else ""),
           file=sys.stderr)
-    if args.filter_id:
-        print(f"[astrobin-csv] filter ID {args.filter_id} "
-              f"(Seestar integrated LP filter; override with --filter-id).",
-              file=sys.stderr)
+    if args.filter_id is not None:
+        note = (f"filter ID forced to {args.filter_id}" if args.filter_id
+                else "'filter' left blank (--filter-id 0)")
+        print(f"[astrobin-csv] {note}.", file=sys.stderr)
     else:
-        print("[astrobin-csv] NOTE: 'filter' left blank (--filter-id 0).",
-              file=sys.stderr)
+        filters = sorted({filt for _, filt in sessions})
+        print(f"[astrobin-csv] filter auto-detect: "
+              + ", ".join(f"{f or '(none)'} -> {SEESTAR_FILTER_IDS.get(f, 'blank')}"
+                          for f in filters), file=sys.stderr)
+        unknown = [f for f in filters if f and f not in SEESTAR_FILTER_IDS]
+        if unknown:
+            print(f"[astrobin-csv] NOTE: unknown filter(s) {unknown} left blank — "
+                  "set them with --filter-id or on AstroBin after import.",
+                  file=sys.stderr)
     if args.out:
         print(f"[astrobin-csv] written: {args.out}", file=sys.stderr)
 

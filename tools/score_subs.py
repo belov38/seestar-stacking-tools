@@ -4,8 +4,10 @@ BEFORE stacking. Siril registration alone does not catch these (on NGC 292 it
 registered 920/932 frames while 87 were shot through clouds).
 
 Measures per frame (on 2x2-binned luminance, fast): background level, star count,
-FWHM, roundness. Groups frames by exposure (sky level scales with exposure), then
-classifies with robust median/MAD thresholds per group:
+FWHM, roundness. Groups frames by exposure AND filter (sky level scales with
+exposure, and an IRCUT sub sees a different sky than an LP sub — mixing groups
+falsely flags whole groups), then classifies with robust median/MAD thresholds
+per group:
 
   CLOUD   bg > +3 sigma AND nstars < -3 sigma   (shot through clouds, ~zero signal)
   HAZY    bg > +3 sigma, star count normal      (thin haze; normalization compensates)
@@ -49,6 +51,19 @@ def exposure_key(path):
         return "unknown"
 
 
+def filter_key(path):
+    """Filter token from the Seestar filename (_LP_/_IRCUT_), header fallback."""
+    m = re.search(r"\ds_([A-Za-z0-9]+)_\d{8}-\d{6}\.fit$", os.path.basename(path),
+                  re.IGNORECASE)
+    if m:
+        return m.group(1).upper()
+    try:
+        filt = fits.getheader(path).get("FILTER")
+        return str(filt).strip().upper() if filt else ""
+    except Exception:
+        return ""
+
+
 def score_frame(path):
     with fits.open(path, memmap=False) as hdul:
         d = hdul[0].data.astype(np.float32)
@@ -76,15 +91,17 @@ def score_frame(path):
 
 
 def classify(rows):
-    """rows: list of dicts with bg/nstars/fwhm/roundness/exposure. Adds 'class' in place."""
-    for exp in sorted({r["exposure"] for r in rows}):
-        grp = [r for r in rows if r["exposure"] == exp]
+    """rows: list of dicts with bg/nstars/fwhm/roundness/exposure/filter. Adds 'class' in place."""
+    for key in sorted({(r["exposure"], r["filter"]) for r in rows}):
+        exp, filt = key
+        label = f"{exp}/{filt}" if filt else exp
+        grp = [r for r in rows if (r["exposure"], r["filter"]) == key]
         mbg, sbg = mad_stats([r["bg"] for r in grp])
         mns, sns = mad_stats([r["nstars"] for r in grp])
         mfw, sfw = mad_stats([r["fwhm_px"] for r in grp])
         mrd, srd = mad_stats([r["roundness"] for r in grp])
         if len(grp) < 20:
-            print(f"[score] warning: only {len(grp)} frames in {exp} group — thresholds unstable")
+            print(f"[score] warning: only {len(grp)} frames in {label} group — thresholds unstable")
         for r in grp:
             if r["bg"] > mbg + 3 * sbg and r["nstars"] < mns - 3 * sns:
                 r["class"] = "CLOUD"
@@ -99,7 +116,7 @@ def classify(rows):
                 r["class"] = "SOFT"
             else:
                 r["class"] = "OK"
-        yield exp, grp, (mbg, sbg, mns, sns, mfw, sfw, mrd, srd)
+        yield label, exp, grp, (mbg, sbg, mns, sns, mfw, sfw, mrd, srd)
 
 
 def main():
@@ -122,13 +139,14 @@ def main():
     rows = []
     for i, p in enumerate(files):
         bg, rms, n, fwhm, rnd = score_frame(p)
-        rows.append(dict(file=os.path.basename(p), exposure=exposure_key(p), bg=bg,
-                         bg_rms=rms, nstars=n, fwhm_px=fwhm, roundness=rnd))
+        rows.append(dict(file=os.path.basename(p), exposure=exposure_key(p),
+                         filter=filter_key(p), bg=bg, bg_rms=rms, nstars=n,
+                         fwhm_px=fwhm, roundness=rnd))
         if (i + 1) % 100 == 0:
             print(f"[score] {i+1}/{len(files)}", flush=True)
 
-    for exp, grp, (mbg, sbg, mns, sns, mfw, sfw, mrd, srd) in classify(rows):
-        print(f"\n== {exp}: {len(grp)} frames  bg={mbg:.0f}±{sbg:.0f}  nstars={mns:.0f}±{sns:.0f}"
+    for label, exp, grp, (mbg, sbg, mns, sns, mfw, sfw, mrd, srd) in classify(rows):
+        print(f"\n== {label}: {len(grp)} frames  bg={mbg:.0f}±{sbg:.0f}  nstars={mns:.0f}±{sns:.0f}"
               f"  fwhm={mfw:.2f}±{sfw:.2f}px  roundness={mrd:.2f}±{srd:.2f}")
         counts = {c: sum(1 for r in grp if r["class"] == c) for c in CLASS_ORDER}
         secs = float(exp.rstrip("s")) if exp.rstrip("s").replace(".", "").isdigit() else 0
@@ -147,8 +165,8 @@ def main():
 
     out = args.out or os.path.join(os.path.dirname(os.path.abspath(args.lights)), "sub_scores.csv")
     with open(out, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["file", "exposure", "class", "bg", "bg_rms",
-                                          "nstars", "fwhm_px", "roundness"])
+        w = csv.DictWriter(f, fieldnames=["file", "exposure", "filter", "class", "bg",
+                                          "bg_rms", "nstars", "fwhm_px", "roundness"])
         w.writeheader()
         w.writerows(rows)
     print(f"[score] CSV written: {out}")

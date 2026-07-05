@@ -1,5 +1,5 @@
 ---
-description: Run a Seestar S30 frame through the full processing pipeline (explore → frame quality gate → stack → background → deconv → denoise → plate-solve → SPCC colour calibration → HOO palette → stretch), auto-picking parameters by measurement, stopping only when a choice is doubtful, emitting AstroBin title/description + acquisition CSV, and offering an optional cleanup of intermediate files at the end.
+description: Run a Seestar S30 frame through the full processing pipeline (explore → frame quality gate → stack → background → deconv → denoise → plate-solve → SPCC colour calibration → HOO palette → stretch), auto-picking parameters by measurement, stopping only when a choice is doubtful, emitting AstroBin title/description + acquisition CSV, and offering an optional cleanup of intermediate files at the end. Filter-aware: routes LP vs IRCUT (broadband) sets into separate runs, and offers an optional LP+IRCUT composite when both masters exist.
 argument-hint: <lights-dir | stack.fits>
 ---
 
@@ -22,7 +22,10 @@ Input path: `$1` (a directory of raw lights, or a single stacked FITS).
   The skill runners `background.py` / `denoise.py` wrap it.
 - AstroBin session CSV: `tools/astrobin_session_csv.py` (scans lights, emits the import CSV).
 - Sub quality scorer: `tools/score_subs.py` (per-frame bg / star count / FWHM / roundness →
-  CLOUD/HAZY/SOFT/TRAILED classes; `--move CLASSES --aside-dir DIR` quarantines).
+  CLOUD/HAZY/SOFT/TRAILED classes, thresholds per exposure+filter group;
+  `--move CLASSES --aside-dir DIR` quarantines).
+- LP+IRCUT composite: `tools/composite.py` (WCS-aligns an IRCUT master onto an LP master —
+  natural-star-colour layer; `--mode hargb` adds continuum-subtracted Ha + HaRGB).
 - Processing order is **physically fixed**: stack → background extraction → deconvolution →
   denoise → plate-solve → **SPCC colour calibration** → stretch. Deconv and denoise run on
   **linear** data; denoise comes after deconv; plate-solve runs on the final linear master; SPCC
@@ -70,7 +73,21 @@ This step only inspects and tidies the input — it creates no run dir and touch
    - `$1` is a **single FITS** → ready-stack mode (skip Steps 3–4; this file is the Step-5 base),
      `DATADIR=dirname($1)`. Warn if the header is stripped (no OBJECT/RA/DEC). (No `lights/` needed.)
    Then **validate**: `LIGHTS/` exists and holds ≥1 `.fit` (else error out).
-5. **Read `OBJECT`** from a representative FITS (astropy) for naming; fall back to the basename.
+5. **Filter census (LP vs IRCUT) & routing.** The S30 Pro has two switchable filters, and every
+   sub carries its filter in the filename (`_LP_` / `_IRCUT_`) and in the `FILTER` header
+   keyword. Count subs per filter and set `RUN_FILTER`:
+   - **all LP** → normal run (`RUN_FILTER=LP`).
+   - **all IRCUT** → broadband run (`RUN_FILTER=IRCUT`): SPCC uses the generic `UV/IR Block`
+     profile (Step 9), the palette step is skipped outright (Step 10), and run/deliverable
+     names carry an `IRCUT` tag (Step 2).
+   - **mixed** → never stack the two together — they are spectrally incompatible in one stack
+     (normalization, rejection and SPCC all break). **STOP and ask**, reporting per-filter sub
+     counts and integration minutes: quarantine the minority filter to
+     `<DATADIR>/_<filter>_aside/` (move, never delete — e.g. `_ircut_aside/`) and process the
+     majority now, or run the pipeline twice, once per filter.
+   In ready-stack mode read `FILTER` from the input FITS header instead (missing → assume LP,
+   say so).
+6. **Read `OBJECT`** from a representative FITS (astropy) for naming; fall back to the basename.
 
 ## Step 2 — Make the run dir (next to the user's data)
 
@@ -84,8 +101,10 @@ mkdir -p "$RUN"/{01_stack,02_background,03_deconv,04_denoise,05_stretch,previews
 ```
 
 (The `NN_*` subdir numbers track the five **processing** stages, independent of the Step numbers in
-this doc.) Create `REPORT.md` with a header (input path, mode, object, local + UTC time). Announce
-the plan and the absolute run dir to the user, then proceed.
+this doc.) On an **IRCUT run** name it `belov38-<OBJECT>-IRCUT-$STAMP` and use `<OBJECT>_IRCUT`
+in place of `<OBJECT>` in every deliverable name — two runs of the same object then coexist in
+one `DATADIR`. Create `REPORT.md` with a header (input path, mode, object, **filter**, local +
+UTC time). Announce the plan and the absolute run dir to the user, then proceed.
 
 ## Step 3 — Frame quality gate (clouds, haze, focus, trails) — stacking mode only
 
@@ -99,9 +118,9 @@ in ready-stack mode):
 ```
 
 The scorer measures per frame — background level, star count, FWHM, roundness — on a 2×2-binned
-luminance (~0.5 s/frame), groups frames **by exposure** (a 60 s sub has ~2× the sky of a 30 s sub;
-mixing groups falsely flags every long sub), and classifies with robust median/MAD thresholds
-per group:
+luminance (~0.5 s/frame), groups frames **by exposure and filter** (a 60 s sub has ~2× the sky of
+a 30 s sub, and an IRCUT sub sees a different sky than an LP sub; mixing groups falsely flags
+whole groups), and classifies with robust median/MAD thresholds per group:
 
 - **CLOUD** — bg > +3σ **and** nstars < −3σ: shot through clouds, ~zero signal → drop.
 - **HAZY** — bg > +3σ, star count normal: thin haze; normalization mostly compensates → usually keep.
@@ -137,7 +156,7 @@ the **universal rule** (FITS + PNG + `validate here:`).
 | 7 | `seestar-denoise-compare` | `04_denoise/` | strongest setting with FWHM Δ < ~3% **and** faint_keep > ~0.85 | even the lowest strength over-blurs → propose **skip denoise** |
 | 8 | *(plate-solve — Siril, no skill)* | `05_stretch/` | always solve the final master (skip if already `PLTSOLVD`) | **warn + continue** if the solve fails (e.g. no internet) — keep the unsolved master |
 | 9 | *(SPCC colour calibration — Siril, no skill)* | `05_stretch/` | SPCC reports `succeeded` and the star-core G/R moves toward 1 — auto-adopt the calibrated master | **warn + continue** if SPCC fails (no internet / no `siril-spcc-database`) — keep the un-calibrated solved master |
-| 10 | *(palette master HOO — `tools/palette.py`, no skill)* | `05_stretch/` | always — EMIT or SKIP decided by the emission-separation metric; log either way | never |
+| 10 | *(palette master HOO — `tools/palette.py`, no skill)* | `05_stretch/` | LP runs: always — EMIT or SKIP decided by the emission-separation metric; IRCUT runs: skip outright; log either way | never |
 | 11 | *(stretch — manual, no skill)* | `05_stretch/` | — | **always present** the final result (stretch is the user's call) |
 
 Notes per step:
@@ -174,14 +193,17 @@ Notes per step:
   Siril with the Seestar S30 profiles from the SPCC database (`siril-spcc-database`):
   ```
   load <OBJECT>_final_solved
-  spcc "-oscsensor=Sony IMX585" "-oscfilter=ZWO Seestar LP"
+  spcc "-oscsensor=Sony IMX585" "-oscfilter=ZWO Seestar LP"    # RUN_FILTER=LP
+  spcc "-oscsensor=Sony IMX585" "-oscfilter=UV/IR Block"       # RUN_FILTER=IRCUT
   save <OBJECT>_final_spcc
   ```
   **Siril 1.4.x CLI quoting (the trap):** the whole `-flag=value` token must be wrapped in quotes —
   `spcc "-oscsensor=Sony IMX585" "-oscfilter=ZWO Seestar LP"`. The forms `-oscsensor="Sony IMX585"`
-  (quotes after `=`) and `-oscsensor "Sony IMX585"` (space, no `=`) **both fail**. Sensor/filter
-  for the S30 are fixed (`Sony IMX585` + `ZWO Seestar LP`; the `_LP_` in the sub filenames confirms
-  the LP filter). SPCC needs **online** access (downloads the Gaia catalog) — if it **fails** (no
+  (quotes after `=`) and `-oscsensor "Sony IMX585"` (space, no `=`) **both fail**. The sensor is
+  fixed (`Sony IMX585`); the filter profile follows `RUN_FILTER`: `ZWO Seestar LP` for LP,
+  `UV/IR Block` for IRCUT (the generic profile — the SPCC DB has no Seestar-specific IRCUT entry
+  and needs none: the IRCUT position is a plain UV/IR window). SPCC needs **online** access
+  (downloads the Gaia catalog) — if it **fails** (no
   internet / DB missing), warn and continue with the un-calibrated `<OBJECT>_final_solved.fit`.
   It may print *"imprecise solution, consider correcting the image gradient first"* on a
   frame-filling nebula — acceptable (background was already extracted in Step 5; the fit is still
@@ -189,10 +211,14 @@ Notes per step:
   luminance) and log the G/R move toward ~1 (e.g. 1.66 → 1.09) as the verdict. The adopted SPCC
   master `<OBJECT>_final_spcc.fit` becomes the deliverable carried into Steps 10–11; keep the
   pre-SPCC `<OBJECT>_final_solved.fit` too.
-- **Step 10 (palette master HOO):** the LP filter is dual-band (Ha 656 nm + OIII ~500 nm),
-  so an emission target carries a second free palette in the same data (Ha lives in R, OIII in
-  G+B). HOO is the **only** palette emitted — there is no SII line in the filter, so a
-  synthetic "SHO" would carry zero new information (we used to emit one; dropped by decision).
+- **Step 10 (palette master HOO — LP runs only):** the LP filter is dual-band (Ha 656 nm +
+  OIII ~500 nm), so an emission target carries a second free palette in the same data (Ha lives
+  in R, OIII in G+B). HOO is the **only** palette emitted — there is no SII line in the filter,
+  so a synthetic "SHO" would carry zero new information (we used to emit one; dropped by
+  decision). On an **IRCUT run skip this step outright** and log why: broadband R vs G+B is not
+  Ha vs OIII — worse, Ha still lands in R, so an emission target can *fake* a plausible
+  separation score; don't trust the metric here (`palette.py` also hard-skips any master whose
+  `FILTER` header is not `LP`).
   Run on the adopted master — `<OBJECT>_final_spcc.fit`, or `<OBJECT>_final_solved.fit`
   if SPCC failed:
   ```
@@ -203,7 +229,7 @@ Notes per step:
   `PALETTES: SKIP (...)`. On **EMIT** it writes `<OBJECT>_final_HOO.fit` (R=Ha, G=B=OIII) —
   linear, header + WCS intact, stretch-ready like the SPCC master. Render a preview PNG with
   `tools/preview.py` (no `--ref`) into **`05_stretch/`** (not `previews/` — it must survive
-  Step 12 cleanup) as `05_stretch/<OBJECT>_final_HOO.png`, and drop
+  Step 13 cleanup) as `05_stretch/<OBJECT>_final_HOO.png`, and drop
   the `validate here:` line. On **SKIP** (continuum target — cluster/galaxy: star
   colours, not emission; the gate suppresses stars before measuring, see FINDINGS.md) log the
   verdict line with the measured separation to REPORT.md and move on. This step is always
@@ -213,7 +239,7 @@ Notes per step:
   (header + WCS + colour intact). Render a stretched full-frame PNG with `tools/preview.py` (no
   `--ref`) **from that calibrated master** as a visual deliverable, writing it **into the kept
   `05_stretch/` dir** as `05_stretch/<OBJECT>_final_stretch.png` (not `previews/`) so it survives
-  Step 12 cleanup. Do **not** auto-tune a stretch.
+  Step 13 cleanup. Do **not** auto-tune a stretch.
 
 ## Previews
 
@@ -253,17 +279,18 @@ When Step 11 is done, produce the publication deliverables, then summarize.
    ```
    It groups subs into **observing nights** off the Seestar **local** filename timestamp
    (`_YYYYMMDD-HHMMSS`, shifted −12 h so a night crossing local midnight stays one row — the
-   header `DATE-OBS` is UTC, so don't group on it). Auto-fills date/number/duration/binning/gain;
-   `filter` defaults to the Seestar integrated LP filter (AstroBin ID 40954 — override with
-   `--filter-id N`, or `--filter-id 0` to leave blank) and darks/flats/bias stay blank (Seestar
-   calibrates on-device). Pass `--bortle/--sqm/--fwhm` if the user gives them.
+   header `DATE-OBS` is UTC, so don't group on it) — one row per (night, filter). Auto-fills
+   date/number/duration/binning/gain; `filter` is auto-detected per sub and mapped to the S30
+   Pro integrated filters' AstroBin IDs (LP → 40954, IRCUT → 42307; force with `--filter-id N`,
+   blank with `--filter-id 0`); darks/flats/bias stay blank (Seestar calibrates on-device).
+   Pass `--bortle/--sqm/--fwhm` if the user gives them.
 2. **AstroBin title + description** → write `05_stretch/astrobin.txt`: a title (designation +
    common name, e.g. `NGC 2070 — Tarantula Nebula (Caldwell 103)`) and a description with scope
-   (ZWO Seestar S30 / sensor / focal), total integration (subs × dur = hours, and stacked count
-   if it differs), date range, and the **actual processing chain you logged** (stack params →
-   GraXpert AI bg → Siril RL params → GraXpert denoise strength → plate-solved → SPCC colour
-   calibration: `Sony IMX585` + `ZWO Seestar LP`). If Step 10 emitted, mention the available
-   HOO palette master in the description.
+   (ZWO Seestar S30 / sensor / focal), the filter (`RUN_FILTER`), total integration (subs × dur
+   = hours, and stacked count if it differs), date range, and the **actual processing chain you
+   logged** (stack params → GraXpert AI bg → Siril RL params → GraXpert denoise strength →
+   plate-solved → SPCC colour calibration: `Sony IMX585` + the Step-9 filter profile). If
+   Step 10 emitted, mention the available HOO palette master in the description.
 3. **Copy the deliverables next to the input** so the user finds them with their data — into
    `DATADIR` (the parent of `LIGHTS/`, or beside the input FITS): the calibrated master
    `<OBJECT>_final_spcc.fit` (and `<OBJECT>_final_solved.fit` if SPCC ran — the pre-SPCC version),
@@ -276,7 +303,36 @@ Then post a short summary: the per-step decisions, the deliverable paths (run di
 SPCC-calibrated, header + WCS intact). Do **not** commit anything (image data is gitignored; the
 user commits skills/tools, not run outputs).
 
-## Step 12 — Offer cleanup (optional; last action; never automatic)
+## Step 12 — Offer the LP+IRCUT composite (optional; only when both masters exist)
+
+The S30 Pro's two filters complement each other: the LP master carries the emission lines,
+the IRCUT master carries honest broadband star colours and continuum. When **both** a
+plate-solved LP master and a plate-solved IRCUT master of the **same object** exist — this
+run's deliverable plus a `*_final_spcc.fit` / `*_final_solved.fit` from an earlier run in
+`DATADIR` — *offer* the composite; never run it unasked, and skip the offer silently when only
+one filter's master exists:
+
+```
+.venv/bin/python tools/composite.py <LP master>.fit <IRCUT master>.fit \
+  --outdir 05_stretch --basename <OBJECT>_final [--mode hargb]
+```
+
+- `--mode align` (default) → `<OBJECT>_final_IRCUT_aligned.fit`: the IRCUT master reprojected
+  onto the LP master's pixel grid (WCS-based — both must be plate-solved). This is the
+  **natural-star-colour layer**: recompose it over a starless stretch of the LP/HOO master and
+  the stars lose the LP filter's gutted continuum. Useful already at ~40 min of IRCUT
+  integration — stars need little SNR.
+- `--mode hargb` → additionally `<OBJECT>_final_Ha.fit` (mono, continuum-subtracted:
+  `Ha = LP_R − k·IRCUT_R`, k measured on bright continuum pixels) and
+  `<OBJECT>_final_HaRGB.fit` (Ha blended into the broadband red). Worth offering only with
+  **hours** of IRCUT — the broadband base must stand on its own.
+
+It prints a parseable `COMPOSITE: ALIGN/HARGB (k=…, coverage=…)` line — log it to `REPORT.md`
+(low coverage means the two masters barely overlap; say so). Render previews with
+`tools/preview.py` into `05_stretch/` and copy the outputs to `DATADIR` like the other
+deliverables.
+
+## Step 13 — Offer cleanup (optional; last action; never automatic)
 
 The pipeline deliberately leaves a `.fit` + `.png` at **every** stage so the user can resume
 manually from any step — deleting those throws that away, so **never prune on your own**. As the
@@ -290,14 +346,15 @@ explicit confirmation.
 2. **State exactly what stays vs goes:**
    - **Keep:** `05_stretch/` (SPCC-calibrated master `<OBJECT>_final_spcc.fit`, the pre-SPCC
      `<OBJECT>_final_solved.fit`, the palette master `<OBJECT>_final_HOO.fit` +
-     its PNG when Step 10 emitted, the final autostretch PNG
+     its PNG when Step 10 emitted, any Step-12 composite outputs, the final autostretch PNG
      `<OBJECT>_final_stretch.png`, `astrobin.txt`, `astrobin_acquisition.csv`), `REPORT.md`,
      and the deliverable **copies in `DATADIR`**. The final stretch preview and the palette
      previews live here (in `05_stretch/`, not `previews/`), so removing `previews/` never
      loses them.
    - **Remove:** `01_stack/`, `02_background/`, `03_deconv/`, `04_denoise/`, `previews/`.
-   - **Never touch:** the user's source lights, `<lights>/_jpg_aside/`, and
-     `<DATADIR>/_clouds_aside/` — those are the user's own originals, not pipeline output.
+   - **Never touch:** the user's source lights, `<lights>/_jpg_aside/`,
+     `<DATADIR>/_clouds_aside/`, and any `<DATADIR>/_<filter>_aside/` (quarantined
+     other-filter subs) — those are the user's own originals, not pipeline output.
 3. **Ask a yes/no question** with the measured size (e.g. "Permanently delete the intermediates
    and reclaim ~1.4 GB? `05_stretch/` + `REPORT.md` + the `DATADIR` copies are kept; this can't be
    undone"). **Wait** for the answer.

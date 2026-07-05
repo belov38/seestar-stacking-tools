@@ -117,7 +117,8 @@ def test_separation_none_for_empty_field():
 def test_cli_emission_emits_hoo_master(capsys):
     with tempfile.TemporaryDirectory() as d:
         src = os.path.join(d, "master.fit")
-        hdr = fits.Header({"OBJECT": "TEST", "CRVAL1": 84.67, "CRVAL2": -69.1, "LIVETIME": 3600.0})
+        hdr = fits.Header({"OBJECT": "TEST", "CRVAL1": 84.67, "CRVAL2": -69.1,
+                           "LIVETIME": 3600.0, "FILTER": "LP"})
         _write(src, _emission(), hdr)
         palette.main([src, "--outdir", d, "--basename", "TEST_final"])
         out = capsys.readouterr().out
@@ -136,6 +137,18 @@ def test_cli_emission_emits_hoo_master(capsys):
         # header + WCS preserved, HISTORY added
         assert hoo_hdr["OBJECT"] == "TEST" and abs(hoo_hdr["CRVAL1"] - 84.67) < 1e-9
         assert any("palette.py" in str(c) for c in hoo_hdr.get("HISTORY", []))
+
+
+def test_cli_broadband_master_hard_skips(capsys):
+    """An IRCUT master must be refused even with --force: emission still lands
+    in R on broadband data, so the metric could fake a plausible EMIT."""
+    with tempfile.TemporaryDirectory() as d:
+        src = os.path.join(d, "master.fit")
+        _write(src, _emission(), fits.Header({"FILTER": "IRCUT"}))
+        palette.main([src, "--outdir", d, "--basename", "T", "--force"])
+        out = capsys.readouterr().out
+        assert "PALETTES: SKIP (filter=IRCUT" in out
+        assert not os.path.exists(os.path.join(d, "T_HOO.fit"))
 
 
 def test_cli_continuum_skips_without_files(capsys):
