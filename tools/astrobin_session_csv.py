@@ -27,7 +27,7 @@ Seestar calibrates on-device, so darks/flats/bias are left blank rather than
 asserting 0.
 
 Usage:
-    astrobin_session_csv.py <lights-dir> [--out FILE] [--night-shift-hours 12]
+    astrobin_session_csv.py <lights-dir> [<lights-dir>...] [--out FILE] [--night-shift-hours 12]
         [--utc-offset-hours 0] [--filter-id N] [--bortle N] [--sqm X]
         [--fwhm X] [--sensor-temp]
 """
@@ -122,10 +122,15 @@ def _num(x):
     return str(x)
 
 
-def collect_sessions(lights_dir, night_shift_hours, utc_offset_hours):
-    files = sorted(glob.glob(os.path.join(lights_dir, "*.fit")))
-    if not files:
-        files = sorted(glob.glob(os.path.join(lights_dir, "*.fits")))
+def collect_sessions(lights_dirs, night_shift_hours, utc_offset_hours):
+    if isinstance(lights_dirs, str):
+        lights_dirs = [lights_dirs]
+    files = []
+    for d in lights_dirs:
+        found = sorted(glob.glob(os.path.join(d, "*.fit")))
+        if not found:
+            found = sorted(glob.glob(os.path.join(d, "*.fits")))
+        files.extend(found)
     sessions = defaultdict(lambda: {
         "n": 0, "exptime": [], "gain": [], "binning": [], "ccdtemp": [],
     })
@@ -189,7 +194,9 @@ def build_rows(sessions, args):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("lights_dir", help="lights/ folder (or a dir containing it)")
+    ap.add_argument("lights_dir", nargs="+",
+                    help="lights/ folder(s) (or dirs containing one); pass several "
+                         "to merge sessions for a multi-filter composite")
     ap.add_argument("--out", help="write CSV here (also printed to stdout)")
     ap.add_argument("--night-shift-hours", type=float, default=12.0,
                     help="hours to subtract from local time before taking the night date (default 12)")
@@ -206,14 +213,15 @@ def main(argv=None):
                     help="fill sensorCooling from mean CCD-TEMP (Seestar is uncooled; off by default)")
     args = ap.parse_args(argv)
 
-    lights_dir = resolve_lights_dir(args.lights_dir)
-    if not os.path.isdir(lights_dir):
-        ap.error(f"not a directory: {lights_dir}")
+    lights_dirs = [resolve_lights_dir(d) for d in args.lights_dir]
+    for d in lights_dirs:
+        if not os.path.isdir(d):
+            ap.error(f"not a directory: {d}")
 
     sessions, total, skipped = collect_sessions(
-        lights_dir, args.night_shift_hours, args.utc_offset_hours)
+        lights_dirs, args.night_shift_hours, args.utc_offset_hours)
     if not sessions:
-        ap.error(f"no usable .fit lights found in {lights_dir}")
+        ap.error(f"no usable .fit lights found in {', '.join(lights_dirs)}")
 
     rows = build_rows(sessions, args)
 

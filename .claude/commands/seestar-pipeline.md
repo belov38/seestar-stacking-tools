@@ -346,6 +346,19 @@ It prints a parseable `COMPOSITE: ALIGN/HARGB (k=…, coverage=…)` line — lo
 `tools/preview.py` into `05_stretch/` and copy the outputs to `DATADIR` like the other
 deliverables.
 
+When the composite is built, also emit a **combined acquisition CSV** — the composite image
+uses both filters' subs, so its AstroBin import must cover both sets. Pass every `lights/`
+dir involved (the tool merges and date-sorts the rows):
+
+```
+.venv/bin/python tools/astrobin_session_csv.py <this run's LIGHTS> <other run's LIGHTS> \
+  --out 05_stretch/<OBJECT>_combined_astrobin_acquisition.csv
+```
+
+Copy it to `DATADIR` with the other composite outputs. If the other run's raw lights are gone
+(only the master survives), fall back to concatenating that run's saved
+`astrobin_acquisition.csv` rows with this run's.
+
 ## Step 13 — Offer cleanup (optional; last action; never automatic)
 
 The pipeline deliberately leaves a `.fit` + `.png` at **every** stage so the user can resume

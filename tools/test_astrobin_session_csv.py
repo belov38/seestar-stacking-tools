@@ -119,6 +119,27 @@ def test_mixed_exposures_one_row_per_duration():
         assert rows[0]["date"] == rows[1]["date"] == "2026-07-10"
 
 
+def test_multiple_lights_dirs_merge_into_one_csv():
+    """A composite deliverable needs one CSV covering both filters' sessions —
+    pass every lights dir and get merged, date-sorted rows."""
+    with tempfile.TemporaryDirectory() as d:
+        lp = os.path.join(d, "lp_run", "lights"); os.makedirs(lp)
+        ir = os.path.join(d, "ir_run", "lights"); os.makedirs(ir)
+        for stamp in ["20260627-210000", "20260627-210031"]:
+            _light(os.path.join(lp, f"Light_X_30.0s_LP_{stamp}.fit"), "x")
+        _light(os.path.join(ir, "Light_X_20.0s_IRCUT_20260710-220525.fit"), "x",
+               exptime=20.0)
+        import contextlib
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            mod.main([lp, ir])
+        rows = _rows(buf.getvalue())
+        assert len(rows) == 2
+        assert rows[0]["date"] == "2026-06-27" and rows[0]["filter"] == "40954"
+        assert rows[1]["date"] == "2026-07-10" and rows[1]["filter"] == "42307"
+        assert rows[1]["duration"] == "20"
+
+
 def test_filter_id_zero_blanks_all():
     with tempfile.TemporaryDirectory() as d:
         lights = os.path.join(d, "lights"); os.makedirs(lights)
