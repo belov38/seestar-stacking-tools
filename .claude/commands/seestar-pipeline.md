@@ -87,6 +87,16 @@ This step only inspects and tidies the input — it creates no run dir and touch
      majority now, or run the pipeline twice, once per filter.
    In ready-stack mode read `FILTER` from the input FITS header instead (missing → assume LP,
    say so).
+
+   **Exposure census (within the chosen filter).** Also count subs per exposure length (the
+   `_10.0s_` filename token). Unlike mixed filters, **mixed exposures stack fine together** —
+   the stacking scripts normalize with `-norm=addscale -output_norm`, which scales each frame
+   to a common flux level — so this is AUTO, never a stop: keep all frames, report the
+   per-exposure counts and integration minutes to the user, and log them to `REPORT.md`.
+   Two things downstream already handle the mix: `score_subs.py` thresholds per
+   (exposure, filter) group (expect its "thresholds unstable" warning on groups of ≲20 frames —
+   fine, small groups just get lenient gates), and the AstroBin CSV emits one row per
+   (night, filter, exposure).
 6. **Read `OBJECT`** from a representative FITS (astropy) for naming; fall back to the basename.
 
 ## Step 2 — Make the run dir (next to the user's data)
@@ -183,7 +193,10 @@ Notes per step:
   save <OBJECT>_final_solved
   ```
   Use **`-noflip`** — write WCS into the header, **do not rotate/flip pixels** (non-destructive;
-  WCS-aware viewers/SPCC orient North-up from the WCS). Siril prints "Image is already plate
+  WCS-aware viewers/SPCC orient North-up from the WCS). If the solve fails with "could not be
+  aligned with the reference stars" on a **dense field** (SMC/LMC star clouds, rich clusters),
+  retry with `-catalog=gaia -downscale` — the default NOMAD catalog failed twice on NGC 292
+  while Gaia DR3 solved it first try. Siril prints "Image is already plate
   solved. Nothing will be done." when `PLTSOLVD` is set (Siril's `-2pass` registration already
   solves the stack and the WCS survives header-restore) — that's a fine no-op. If the solve
   **fails** (e.g. no internet), warn the user and continue with the unsolved master.
@@ -279,7 +292,8 @@ When Step 11 is done, produce the publication deliverables, then summarize.
    ```
    It groups subs into **observing nights** off the Seestar **local** filename timestamp
    (`_YYYYMMDD-HHMMSS`, shifted −12 h so a night crossing local midnight stays one row — the
-   header `DATE-OBS` is UTC, so don't group on it) — one row per (night, filter). Auto-fills
+   header `DATE-OBS` is UTC, so don't group on it) — one row per (night, filter, exposure),
+   so mixed sub lengths report honest integration instead of one modal-duration row. Auto-fills
    date/number/duration/binning/gain; `filter` is auto-detected per sub and mapped to the S30
    Pro integrated filters' AstroBin IDs (LP → 40954, IRCUT → 42307; force with `--filter-id N`,
    blank with `--filter-id 0`); darks/flats/bias stay blank (Seestar calibrates on-device).

@@ -34,8 +34,8 @@ def test_night_crossing_midnight_is_one_session():
                    "2026-06-17T08:54:13")  # UTC, deliberately a different date
         sessions, total, skipped = mod.collect_sessions(lights, 12.0, 0.0)
         assert total == 3 and skipped == 0
-        assert set(sessions) == {("2026-06-17", "LP")}
-        assert sessions[("2026-06-17", "LP")]["n"] == 3
+        assert set(sessions) == {("2026-06-17", "LP", 30.0)}
+        assert sessions[("2026-06-17", "LP", 30.0)]["n"] == 3
 
 
 def test_two_distinct_nights():
@@ -44,7 +44,7 @@ def test_two_distinct_nights():
         _light(os.path.join(lights, "Light_X_30.0s_LP_20260617-210000.fit"), "x")
         _light(os.path.join(lights, "Light_X_30.0s_LP_20260618-210000.fit"), "x")
         sessions, _, _ = mod.collect_sessions(lights, 12.0, 0.0)
-        assert set(sessions) == {("2026-06-17", "LP"), ("2026-06-18", "LP")}
+        assert set(sessions) == {("2026-06-17", "LP", 30.0), ("2026-06-18", "LP", 30.0)}
 
 
 def test_dateobs_fallback_with_offset():
@@ -54,7 +54,7 @@ def test_dateobs_fallback_with_offset():
         _light(os.path.join(lights, "stack_001.fit"), "2026-06-17T08:54:00")
         # +12h local -> 20:54 local -> night-shift -12h -> 2026-06-17
         sessions, _, skipped = mod.collect_sessions(lights, 12.0, 12.0)
-        assert skipped == 0 and set(sessions) == {("2026-06-17", "")}
+        assert skipped == 0 and set(sessions) == {("2026-06-17", "", 30.0)}
 
 
 def test_csv_columns_and_values(capsys):
@@ -94,6 +94,29 @@ def test_mixed_filters_one_row_per_filter():
         assert by_filter["42307"]["number"] == "1"   # IRCUT
         assert by_filter["40954"]["number"] == "2"   # LP
         assert rows[0]["date"] == rows[1]["date"] == "2026-06-27"
+
+
+def test_mixed_exposures_one_row_per_duration():
+    """A night with mixed sub lengths must split into one row per exposure —
+    a single modal-duration row misstates the integration time."""
+    with tempfile.TemporaryDirectory() as d:
+        lights = os.path.join(d, "lights"); os.makedirs(lights)
+        for stamp in ["20260710-220525", "20260710-220536"]:
+            _light(os.path.join(lights, f"Light_X_10.0s_IRCUT_{stamp}.fit"), "x",
+                   exptime=10.0)
+        for stamp in ["20260710-221500", "20260710-221530", "20260710-221600"]:
+            _light(os.path.join(lights, f"Light_X_20.0s_IRCUT_{stamp}.fit"), "x",
+                   exptime=20.0)
+        import contextlib
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            mod.main([lights])
+        rows = _rows(buf.getvalue())
+        assert len(rows) == 2
+        by_duration = {r["duration"]: r for r in rows}
+        assert by_duration["10"]["number"] == "2"
+        assert by_duration["20"]["number"] == "3"
+        assert rows[0]["date"] == rows[1]["date"] == "2026-07-10"
 
 
 def test_filter_id_zero_blanks_all():

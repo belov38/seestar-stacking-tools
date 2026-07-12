@@ -85,6 +85,21 @@ def test_missing_wcs_errors():
             composite.main([lp_path, ir_path, "--outdir", d])
 
 
+def test_sip_3axis_header_accepted():
+    """Siril writes SIP distortion keywords on RGB cubes (NAXIS=3); WCSLIB
+    rejects SIP+3D unless reduced to the two celestial axes."""
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "lp.fit")
+        hdr = _wcs_header(filt="LP")
+        hdr["CTYPE1"], hdr["CTYPE2"] = "RA---TAN-SIP", "DEC--TAN-SIP"
+        hdr["A_ORDER"] = hdr["B_ORDER"] = 2
+        hdr["A_2_0"] = hdr["B_0_2"] = 1e-7
+        _write(path, _flat(0), hdr)  # 3-plane cube -> NAXIS=3 in the header
+        read_back = fits.getheader(path)
+        w = composite.celestial_wcs(read_back, path)
+        assert w.has_celestial and w.naxis == 2
+
+
 def test_swapped_arguments_error():
     with tempfile.TemporaryDirectory() as d:
         lp_path, ir_path = os.path.join(d, "lp.fit"), os.path.join(d, "ir.fit")

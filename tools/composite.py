@@ -56,7 +56,9 @@ def celestial_wcs(header, path):
     """Celestial WCS from a master header; error out if not plate-solved."""
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", FITSFixedWarning)
-        w = WCS(header)
+        # naxis=2: Siril writes SIP keywords on RGB cubes (NAXIS=3), and
+        # WCSLIB refuses SIP+3D unless reduced to the celestial axes
+        w = WCS(header, naxis=2)
     if not w.has_celestial:
         sys.exit(f"{path}: no celestial WCS — plate-solve both masters first "
                  "(pipeline Step 8)")

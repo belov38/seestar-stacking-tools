@@ -20,7 +20,8 @@ Columns (https://welcome.astrobin.com/importing-acquisitions-from-csv):
 Only `number` and `duration` are mandatory. `filter` is an AstroBin numeric filter ID,
 auto-detected per sub from the filename token (`_LP_` / `_IRCUT_`; header FILTER as
 fallback) and mapped to the S30 Pro integrated filters' AstroBin IDs. Sessions are
-grouped by (night, filter), so a mixed night yields one honest row per filter.
+grouped by (night, filter, exposure), so a night mixing filters or sub lengths
+yields one honest row per combination instead of a modal-duration mash.
 Override with --filter-id N (forces one ID on every row) or --filter-id 0 (blank).
 Seestar calibrates on-device, so darks/flats/bias are left blank rather than
 asserting 0.
@@ -67,6 +68,19 @@ def sub_filter(path, header):
         return m.group(1).upper()
     filt = header.get("FILTER")
     return str(filt).strip().upper() if filt else ""
+
+
+# Exposure token before the filter, e.g. _10.0s_IRCUT_20260710-220525.fit
+_FNAME_EXP = re.compile(r"_(\d+(?:\.\d+)?)s_[A-Za-z0-9]+_\d{8}-\d{6}\.fit$", re.IGNORECASE)
+
+
+def sub_exptime(path, header):
+    """Exposure seconds for a sub: header EXPTIME/EXPOSURE first, filename as fallback."""
+    exp = header.get("EXPTIME") or header.get("EXPOSURE")
+    if exp is not None:
+        return float(exp)
+    m = _FNAME_EXP.search(os.path.basename(path))
+    return float(m.group(1)) if m else None
 
 
 def resolve_lights_dir(path):
@@ -127,7 +141,7 @@ def collect_sessions(lights_dir, night_shift_hours, utc_offset_hours):
             skipped += 1
             continue
         night = (lt - timedelta(hours=night_shift_hours)).date().isoformat()
-        s = sessions[(night, sub_filter(f, h))]
+        s = sessions[(night, sub_filter(f, h), sub_exptime(f, h))]
         s["n"] += 1
         s["exptime"].append(h.get("EXPTIME") or h.get("EXPOSURE"))
         s["gain"].append(h.get("GAIN"))
@@ -146,8 +160,9 @@ def filter_cell(filt, args):
 
 def build_rows(sessions, args):
     rows = []
-    for night, filt in sorted(sessions):
-        s = sessions[(night, filt)]
+    for night, filt, exp in sorted(sessions,
+                                   key=lambda k: (k[0], k[1], k[2] is None, k[2] or 0)):
+        s = sessions[(night, filt, exp)]
         ccd = [t for t in s["ccdtemp"] if t is not None]
         sensor_cooling = ""
         if args.sensor_temp and ccd:
@@ -156,7 +171,7 @@ def build_rows(sessions, args):
             "date": night,
             "filter": filter_cell(filt, args),
             "number": str(s["n"]),
-            "duration": _num(_mode(s["exptime"])),
+            "duration": _num(exp if exp is not None else _mode(s["exptime"])),
             "iso": "",
             "binning": _num(_mode(s["binning"]) or 1),
             "gain": _num(_mode(s["gain"])),
@@ -222,7 +237,7 @@ def main(argv=None):
                 else "'filter' left blank (--filter-id 0)")
         print(f"[astrobin-csv] {note}.", file=sys.stderr)
     else:
-        filters = sorted({filt for _, filt in sessions})
+        filters = sorted({filt for _, filt, _ in sessions})
         print(f"[astrobin-csv] filter auto-detect: "
               + ", ".join(f"{f or '(none)'} -> {SEESTAR_FILTER_IDS.get(f, 'blank')}"
                           for f in filters), file=sys.stderr)

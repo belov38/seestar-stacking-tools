@@ -108,3 +108,14 @@ cleans it; denoising first removes detail deconv needs).
 Run all steps at once with the `/seestar-pipeline` command (agent orchestrator): it auto-picks
 each step's parameters by measurement and stops for the user only on doubtful cases (deconv
 rings, backfired background, volatile star-weighted stack).
+
+## Plate-solving dense fields (NOMAD vs Gaia)
+
+Siril's default NOMAD catalog failed to solve the 533-frame IRCUT stack of NGC 292 twice
+("The image could not be aligned with the reference stars", 381 detected vs 3211 catalog
+stars), even seeded with correct header RA/DEC + focal + pixel size. `platesolve
+-catalog=gaia -downscale` solved it on the first try (4654 Gaia DR3 stars via Vizier).
+On dense fields — Magellanic star clouds, rich clusters — go straight to Gaia when NOMAD
+fails. Siril writes SIP distortion keywords with the solution on an RGB cube (NAXIS=3);
+astropy's `WCS(header)` refuses SIP+3D — construct with `WCS(header, naxis=2)`
+(`tools/composite.py` does).
