@@ -239,8 +239,13 @@ Notes per step:
     --outdir 05_stretch --basename <OBJECT>_final
   ```
   It prints one parseable line: `PALETTES: EMIT (separation=..., threshold=...)` or
-  `PALETTES: SKIP (...)`. On **EMIT** it writes `<OBJECT>_final_HOO.fit` (R=Ha, G=B=OIII) —
-  linear, header + WCS intact, stretch-ready like the SPCC master. Render a preview PNG with
+  `PALETTES: SKIP (...)`. On **EMIT** it writes `<OBJECT>_final_HOO.fit` (R=Ha, G=B=OIII)
+  **plus the mono channel masters `<OBJECT>_final_Ha.fit` and `<OBJECT>_final_OIII.fit`** —
+  all linear, header + WCS intact, stretch-ready like the SPCC master. The mono channels are
+  the real deliverable for emission targets: a linked stretch of the HOO cube renders an
+  Ha-dominant target (Ha/OIII ~1.1–1.6 everywhere — Carina) uniformly red, and the teal OIII
+  only appears when the O channel is stretched **separately** (unlinked) to match Ha — a manual
+  step, hence the separate H and O files. Render a preview PNG with
   `tools/preview.py` (no `--ref`) into **`05_stretch/`** (not `previews/` — it must survive
   Step 13 cleanup) as `05_stretch/<OBJECT>_final_HOO.png`, and drop
   the `validate here:` line. On **SKIP** (continuum target — cluster/galaxy: star
@@ -308,7 +313,8 @@ When Step 11 is done, produce the publication deliverables, then summarize.
 3. **Copy the deliverables next to the input** so the user finds them with their data — into
    `DATADIR` (the parent of `LIGHTS/`, or beside the input FITS): the calibrated master
    `<OBJECT>_final_spcc.fit` (and `<OBJECT>_final_solved.fit` if SPCC ran — the pre-SPCC version),
-   the palette master `<OBJECT>_final_HOO.fit` and its PNG
+   the palette master `<OBJECT>_final_HOO.fit`, its PNG, and the mono channel masters
+   `<OBJECT>_final_Ha.fit` / `<OBJECT>_final_OIII.fit`
    (if Step 10 emitted), `<OBJECT>_astrobin.txt`, `<OBJECT>_astrobin_acquisition.csv`,
    `<OBJECT>_final_stretch.png`.
 
@@ -373,7 +379,8 @@ explicit confirmation.
 2. **State exactly what stays vs goes:**
    - **Keep:** `05_stretch/` (SPCC-calibrated master `<OBJECT>_final_spcc.fit`, the pre-SPCC
      `<OBJECT>_final_solved.fit`, the palette master `<OBJECT>_final_HOO.fit` +
-     its PNG when Step 10 emitted, any Step-12 composite outputs, the final autostretch PNG
+     its PNG + the mono `<OBJECT>_final_Ha.fit` / `<OBJECT>_final_OIII.fit`
+     when Step 10 emitted, any Step-12 composite outputs, the final autostretch PNG
      `<OBJECT>_final_stretch.png`, `astrobin.txt`, `astrobin_acquisition.csv`), `REPORT.md`,
      and the deliverable **copies in `DATADIR`**. The final stretch preview and the palette
      previews live here (in `05_stretch/`, not `previews/`), so removing `previews/` never

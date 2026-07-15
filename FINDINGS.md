@@ -119,3 +119,16 @@ On dense fields — Magellanic star clouds, rich clusters — go straight to Gai
 fails. Siril writes SIP distortion keywords with the solution on an RGB cube (NAXIS=3);
 astropy's `WCS(header)` refuses SIP+3D — construct with `WCS(header, naxis=2)`
 (`tools/composite.py` does).
+
+## HOO renders all-red on Ha-dominant targets — emit mono Ha/OIII channels
+
+Measured on C92 (Carina, 473 subs / 3.4 h LP): after SPCC the Ha/OIII flux ratio is ~1.58 over
+the nebula and ~1.12 in the bright core — OIII signal is clearly present, yet the HOO cube
+autostretches uniformly red/pink. Cause: a linked stretch applies one curve to all channels,
+and with Ha ahead of OIII *everywhere* (typical for HII regions), teal never wins a pixel.
+The prominent blue OIII in published Carina HOO images comes from processing — the O channel
+is stretched separately (unlinked) to match Ha, or LinearFit/pixel-math boosted while linear,
+then selectively saturated. So the HOO cube alone is not a finished deliverable for emission
+targets: `tools/palette.py` therefore also writes mono `*_Ha.fit` and `*_OIII.fit` masters
+(linear, bg-neutralized to the HOO pedestal, header + WCS intact) for exactly that manual
+unlinked composition.
