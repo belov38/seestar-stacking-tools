@@ -114,7 +114,7 @@ def test_separation_none_for_empty_field():
     assert palette.emission_separation(ha, oiii) is None
 
 
-def test_cli_emission_emits_hoo_master(capsys):
+def test_cli_emission_emits_mono_channels(capsys):
     with tempfile.TemporaryDirectory() as d:
         src = os.path.join(d, "master.fit")
         hdr = fits.Header({"OBJECT": "TEST", "CRVAL1": 84.67, "CRVAL2": -69.1,
@@ -123,20 +123,25 @@ def test_cli_emission_emits_hoo_master(capsys):
         palette.main([src, "--outdir", d, "--basename", "TEST_final"])
         out = capsys.readouterr().out
         assert "PALETTES: EMIT" in out
-        hoo_path = os.path.join(d, "TEST_final_HOO.fit")
-        assert os.path.exists(hoo_path)
-        with fits.open(hoo_path) as h:
-            hoo, hoo_hdr = h[0].data, h[0].header
-        # channel mapping: R carries the Ha blob, G and B carry the OIII blob
-        assert hoo[0, 60, 40] > hoo[0, 140, 100]
-        assert hoo[1, 140, 100] > hoo[1, 60, 40]
-        assert np.array_equal(hoo[1], hoo[2])
-        # sanity: float32 (FITS stores big-endian), finite, non-negative
-        assert hoo.dtype.kind == "f" and hoo.dtype.itemsize == 4
-        assert np.isfinite(hoo).all() and (hoo >= 0).all()
+        ha_path = os.path.join(d, "TEST_final_Ha.fit")
+        oiii_path = os.path.join(d, "TEST_final_OIII.fit")
+        assert os.path.exists(ha_path) and os.path.exists(oiii_path)
+        # no combined HOO cube is emitted anymore
+        assert not os.path.exists(os.path.join(d, "TEST_final_HOO.fit"))
+        with fits.open(ha_path) as h:
+            ha, ha_hdr = h[0].data, h[0].header
+        with fits.open(oiii_path) as h:
+            oiii = h[0].data
+        # channel mapping: Ha blob only in the Ha master, OIII blob only in OIII master
+        assert ha.ndim == 2 and oiii.ndim == 2
+        assert ha[60, 40] > ha[140, 100]
+        assert oiii[140, 100] > oiii[60, 40]
+        # sanity: float32, finite, non-negative
+        assert ha.dtype.kind == "f" and ha.dtype.itemsize == 4
+        assert np.isfinite(ha).all() and (ha >= 0).all()
         # header + WCS preserved, HISTORY added
-        assert hoo_hdr["OBJECT"] == "TEST" and abs(hoo_hdr["CRVAL1"] - 84.67) < 1e-9
-        assert any("palette.py" in str(c) for c in hoo_hdr.get("HISTORY", []))
+        assert ha_hdr["OBJECT"] == "TEST" and abs(ha_hdr["CRVAL1"] - 84.67) < 1e-9
+        assert any("palette.py" in str(c) for c in ha_hdr.get("HISTORY", []))
 
 
 def test_cli_broadband_master_hard_skips(capsys):
@@ -148,7 +153,7 @@ def test_cli_broadband_master_hard_skips(capsys):
         palette.main([src, "--outdir", d, "--basename", "T", "--force"])
         out = capsys.readouterr().out
         assert "PALETTES: SKIP (filter=IRCUT" in out
-        assert not os.path.exists(os.path.join(d, "T_HOO.fit"))
+        assert not os.path.exists(os.path.join(d, "T_Ha.fit"))
 
 
 def test_cli_continuum_skips_without_files(capsys):
@@ -157,7 +162,7 @@ def test_cli_continuum_skips_without_files(capsys):
         _write(src, _continuum())
         palette.main([src, "--outdir", d, "--basename", "T"])
         assert "PALETTES: SKIP" in capsys.readouterr().out
-        assert not os.path.exists(os.path.join(d, "T_HOO.fit"))
+        assert not os.path.exists(os.path.join(d, "T_Ha.fit"))
 
 
 def test_cli_force_writes_on_skip():
@@ -165,7 +170,8 @@ def test_cli_force_writes_on_skip():
         src = os.path.join(d, "master.fit")
         _write(src, _continuum())
         palette.main([src, "--outdir", d, "--basename", "T", "--force"])
-        assert os.path.exists(os.path.join(d, "T_HOO.fit"))
+        assert os.path.exists(os.path.join(d, "T_Ha.fit"))
+        assert os.path.exists(os.path.join(d, "T_OIII.fit"))
 
 
 def test_cli_metric_only_writes_nothing(capsys):
@@ -174,7 +180,7 @@ def test_cli_metric_only_writes_nothing(capsys):
         _write(src, _emission())
         palette.main([src, "--outdir", d, "--basename", "T", "--metric-only"])
         assert "PALETTES: EMIT" in capsys.readouterr().out
-        assert not os.path.exists(os.path.join(d, "T_HOO.fit"))
+        assert not os.path.exists(os.path.join(d, "T_Ha.fit"))
 
 
 def test_cli_empty_field_skips_gracefully(capsys):
@@ -185,4 +191,4 @@ def test_cli_empty_field_skips_gracefully(capsys):
         palette.main([src, "--outdir", d, "--basename", "T"])
         out = capsys.readouterr().out
         assert "PALETTES: SKIP" in out and "separation=n/a" in out
-        assert not os.path.exists(os.path.join(d, "T_HOO.fit"))
+        assert not os.path.exists(os.path.join(d, "T_Ha.fit"))

@@ -1,5 +1,5 @@
 ---
-description: Run a Seestar S30 frame through the full processing pipeline (explore → frame quality gate → stack → background → deconv → denoise → plate-solve → SPCC colour calibration → HOO palette → stretch), auto-picking parameters by measurement, stopping only when a choice is doubtful, emitting AstroBin title/description + acquisition CSV, and offering an optional cleanup of intermediate files at the end. Filter-aware: routes LP vs IRCUT (broadband) sets into separate runs, and offers an optional LP+IRCUT composite when both masters exist.
+description: Run a Seestar S30 frame through the full processing pipeline (explore → frame quality gate → stack → background → deconv → denoise → plate-solve → SPCC colour calibration → Ha/OIII channel split → stretch), auto-picking parameters by measurement, stopping only when a choice is doubtful, emitting AstroBin title/description + acquisition CSV, and offering an optional cleanup of intermediate files at the end. Filter-aware: routes LP vs IRCUT (broadband) sets into separate runs, offers an optional teal-OIII recombine from user-made starless channels, and an optional LP+IRCUT composite when both masters exist.
 argument-hint: <lights-dir | stack.fits>
 ---
 
@@ -78,8 +78,8 @@ This step only inspects and tidies the input — it creates no run dir and touch
    keyword. Count subs per filter and set `RUN_FILTER`:
    - **all LP** → normal run (`RUN_FILTER=LP`).
    - **all IRCUT** → broadband run (`RUN_FILTER=IRCUT`): SPCC uses the generic `UV/IR Block`
-     profile (Step 9), the palette step is skipped outright (Step 10), and run/deliverable
-     names carry an `IRCUT` tag (Step 2).
+     profile (Step 9), the Ha/OIII channel-split step is skipped outright (Step 10), and
+     run/deliverable names carry an `IRCUT` tag (Step 2).
    - **mixed** → never stack the two together — they are spectrally incompatible in one stack
      (normalization, rejection and SPCC all break). **STOP and ask**, reporting per-filter sub
      counts and integration minutes: quarantine the minority filter to
@@ -166,8 +166,12 @@ the **universal rule** (FITS + PNG + `validate here:`).
 | 7 | `seestar-denoise-compare` | `04_denoise/` | strongest setting with FWHM Δ < ~3% **and** faint_keep > ~0.85 | even the lowest strength over-blurs → propose **skip denoise** |
 | 8 | *(plate-solve — Siril, no skill)* | `05_stretch/` | always solve the final master (skip if already `PLTSOLVD`) | **warn + continue** if the solve fails (e.g. no internet) — keep the unsolved master |
 | 9 | *(SPCC colour calibration — Siril, no skill)* | `05_stretch/` | SPCC reports `succeeded` and the star-core G/R moves toward 1 — auto-adopt the calibrated master | **warn + continue** if SPCC fails (no internet / no `siril-spcc-database`) — keep the un-calibrated solved master |
-| 10 | *(palette master HOO — `tools/palette.py`, no skill)* | `05_stretch/` | LP runs: always — EMIT or SKIP decided by the emission-separation metric; IRCUT runs: skip outright; log either way | never |
+| 10 | *(Ha/OIII channel split — `tools/palette.py`, no skill)* | `05_stretch/` | LP runs: always — EMIT (write mono Ha/OIII) or SKIP decided by the emission-separation metric; IRCUT runs: skip outright; log either way | never |
 | 11 | *(stretch — manual, no skill)* | `05_stretch/` | — | **always present** the final result (stretch is the user's call) |
+
+After Step 11 + Finish there are three **optional** post-steps: **Step 12** (teal-OIII recombine
+from user-made starless channels — offered on an EMIT run), **Step 13** (LP+IRCUT composite when
+both masters exist), **Step 14** (cleanup). All three only run on the user's say-so.
 
 Notes per step:
 - **Step 4 (stack):** pick `experiment_reuse.ssf` if `process/r_pp_light_.seq` exists (you found this
@@ -224,14 +228,15 @@ Notes per step:
   luminance) and log the G/R move toward ~1 (e.g. 1.66 → 1.09) as the verdict. The adopted SPCC
   master `<OBJECT>_final_spcc.fit` becomes the deliverable carried into Steps 10–11; keep the
   pre-SPCC `<OBJECT>_final_solved.fit` too.
-- **Step 10 (palette master HOO — LP runs only):** the LP filter is dual-band (Ha 656 nm +
+- **Step 10 (Ha/OIII channel split — LP runs only):** the LP filter is dual-band (Ha 656 nm +
   OIII ~500 nm), so an emission target carries a second free palette in the same data (Ha lives
-  in R, OIII in G+B). HOO is the **only** palette emitted — there is no SII line in the filter,
-  so a synthetic "SHO" would carry zero new information (we used to emit one; dropped by
-  decision). On an **IRCUT run skip this step outright** and log why: broadband R vs G+B is not
-  Ha vs OIII — worse, Ha still lands in R, so an emission target can *fake* a plausible
-  separation score; don't trust the metric here (`palette.py` also hard-skips any master whose
-  `FILTER` header is not `LP`).
+  in R, OIII in G+B). We emit **only the two linear mono channel masters** — **no combined HOO
+  cube**: a linked stretch of an R=Ha,G=B=OIII cube renders an Ha-dominant target (Carina,
+  Ha/OIII ~3× everywhere) uniformly red and is useless. There is no SII line either, so a
+  synthetic "SHO" carries zero information. On an **IRCUT run skip this step outright** and log
+  why: broadband R vs G+B is not Ha vs OIII — worse, Ha still lands in R, so an emission target
+  can *fake* a plausible separation score; don't trust the metric here (`palette.py` also
+  hard-skips any master whose `FILTER` header is not `LP`).
   Run on the adopted master — `<OBJECT>_final_spcc.fit`, or `<OBJECT>_final_solved.fit`
   if SPCC failed:
   ```
@@ -239,25 +244,23 @@ Notes per step:
     --outdir 05_stretch --basename <OBJECT>_final
   ```
   It prints one parseable line: `PALETTES: EMIT (separation=..., threshold=...)` or
-  `PALETTES: SKIP (...)`. On **EMIT** it writes `<OBJECT>_final_HOO.fit` (R=Ha, G=B=OIII)
-  **plus the mono channel masters `<OBJECT>_final_Ha.fit` and `<OBJECT>_final_OIII.fit`** —
-  all linear, header + WCS intact, stretch-ready like the SPCC master. The mono channels are
-  the real deliverable for emission targets: a linked stretch of the HOO cube renders an
-  Ha-dominant target (Ha/OIII ~1.1–1.6 everywhere — Carina) uniformly red, and the teal OIII
-  only appears when the O channel is stretched **separately** (unlinked) to match Ha — a manual
-  step, hence the separate H and O files. Render a preview PNG with
-  `tools/preview.py` (no `--ref`) into **`05_stretch/`** (not `previews/` — it must survive
-  Step 13 cleanup) as `05_stretch/<OBJECT>_final_HOO.png`, and drop
-  the `validate here:` line. On **SKIP** (continuum target — cluster/galaxy: star
-  colours, not emission; the gate suppresses stars before measuring, see FINDINGS.md) log the
-  verdict line with the measured separation to REPORT.md and move on. This step is always
-  AUTO — never stop to ask; log the verdict to REPORT.md in both cases.
+  `PALETTES: SKIP (...)`. On **EMIT** it writes the mono masters `<OBJECT>_final_Ha.fit` and
+  `<OBJECT>_final_OIII.fit` — both linear, bg-neutralized to a common pedestal, header + WCS
+  intact, stretch-ready. These are the deliverable for emission targets and the input to the
+  optional **Step 12** teal recombine. The teal OIII colour is a non-linear, star-sensitive
+  step (needs starless data), so it is **not** done here — the user stretches each channel,
+  removes stars, and hands them back for Step 12. On **SKIP** (continuum target —
+  cluster/galaxy: star colours, not emission; the gate suppresses stars before measuring, see
+  FINDINGS.md) log the verdict line with the measured separation to REPORT.md and move on. This
+  step is always AUTO — never stop to ask; log the verdict to REPORT.md in both cases. (No PNG
+  preview here — a linked HOO preview would be the misleading all-red image; the channels are
+  previewed, if at all, only after Step 12.)
 - **Step 11 (stretch):** the colour-calibrated `05_stretch/<OBJECT>_final_spcc.fit` (or
   `<OBJECT>_final_solved.fit` if SPCC failed) is the deliverable for the user's own stretch / curves
   (header + WCS + colour intact). Render a stretched full-frame PNG with `tools/preview.py` (no
   `--ref`) **from that calibrated master** as a visual deliverable, writing it **into the kept
   `05_stretch/` dir** as `05_stretch/<OBJECT>_final_stretch.png` (not `previews/`) so it survives
-  Step 13 cleanup. Do **not** auto-tune a stretch.
+  Step 14 cleanup. Do **not** auto-tune a stretch.
 
 ## Previews
 
@@ -309,21 +312,55 @@ When Step 11 is done, produce the publication deliverables, then summarize.
    = hours, and stacked count if it differs), date range, and the **actual processing chain you
    logged** (stack params → GraXpert AI bg → Siril RL params → GraXpert denoise strength →
    plate-solved → SPCC colour calibration: `Sony IMX585` + the Step-9 filter profile). If
-   Step 10 emitted, mention the available HOO palette master in the description.
+   Step 10 emitted, mention the available mono Ha/OIII channel masters for the user's own
+   starless HOO/teal recombination.
 3. **Copy the deliverables next to the input** so the user finds them with their data — into
    `DATADIR` (the parent of `LIGHTS/`, or beside the input FITS): the calibrated master
    `<OBJECT>_final_spcc.fit` (and `<OBJECT>_final_solved.fit` if SPCC ran — the pre-SPCC version),
-   the palette master `<OBJECT>_final_HOO.fit`, its PNG, and the mono channel masters
-   `<OBJECT>_final_Ha.fit` / `<OBJECT>_final_OIII.fit`
+   the mono channel masters `<OBJECT>_final_Ha.fit` / `<OBJECT>_final_OIII.fit`
    (if Step 10 emitted), `<OBJECT>_astrobin.txt`, `<OBJECT>_astrobin_acquisition.csv`,
-   `<OBJECT>_final_stretch.png`.
+   `<OBJECT>_final_stretch.png`. (Any Step-12 teal recombine outputs are copied there too, when
+   the user runs it.)
 
 Then post a short summary: the per-step decisions, the deliverable paths (run dir `05_stretch/`
 **and** the copies in `DATADIR`), and the next manual steps (stretch curves — colour is already
 SPCC-calibrated, header + WCS intact). Do **not** commit anything (image data is gitignored; the
 user commits skills/tools, not run outputs).
 
-## Step 12 — Offer the LP+IRCUT composite (optional; only when both masters exist)
+## Step 12 — Offer the teal-OIII recombine (optional; EMIT runs only; user makes the starless channels)
+
+Only when Step 10 **EMIT**ted (`<OBJECT>_final_Ha.fit` + `<OBJECT>_final_OIII.fit` exist). *Offer*
+it; never run it unasked, and skip the offer silently on a SKIP/IRCUT run. The teal OIII colour is
+a non-linear, star-sensitive step, so it needs data the pipeline deliberately does not produce
+itself: **stretched, starless** Ha and OIII. Set expectations honestly first — measure the
+OIII/Ha ratio and say where teal is even possible (on Carina, OIII ~3× weaker than Ha everywhere,
+so teal is confined to the bright core; the outer arms stay red — that is physics, not processing).
+
+**The handoff (the user does this in their own tool):**
+1. Stretch `<OBJECT>_final_Ha.fit` and `<OBJECT>_final_OIII.fit` **separately** (asinh/GHS/curves),
+   each to a comfortable display range — this is what lifts the ~3× weaker OIII to a comparable level.
+2. Remove stars from each (StarNet++/StarXTerminator — not bundled; the pipeline has no star-removal
+   tool). Ignore star colour entirely; it is discarded with the stars.
+3. Save the two starless mono files next to the run, e.g. `<OBJECT>_final_Ha_starless.fit` and
+   `<OBJECT>_final_OIII_starless.fit`, and tell the agent to continue.
+
+**On resume**, run the recombine on the two starless channels:
+```
+.venv/bin/python tools/hoo_recombine.py \
+  05_stretch/<OBJECT>_final_Ha_starless.fit 05_stretch/<OBJECT>_final_OIII_starless.fit \
+  --out 05_stretch/<OBJECT>_final_HOO_teal.fit
+```
+`hoo_recombine.py` does: LinearFit Ha→OIII (ref=OIII, so weak OIII is not swallowed) → a mild
+gaussian blur on OIII (`--oiii-blur`, chroma denoise — the main defence against boosted-OIII colour
+noise) → optional `--oiii-boost` → the **dynamic green blend** `w=(O·Ha)^(1−O·Ha); R=Ha,
+G=w·Ha+(1−w)·O, B=O` (OIII shows only where it is really present, instead of flat G=OIII greying the
+frame) → average-neutral SCNR green. It prints `RECOMBINE: TEAL (linfit a=…, b=…, blur=…, boost=…)`
+and writes `<OBJECT>_final_HOO_teal.fit` + `.png` (RGB, header/WCS from the Ha input). Since the
+inputs are already stretched, the output is a finished colour image — the user does final curves.
+Preview it, log the line to `REPORT.md`, and copy the outputs to `DATADIR`. Sweep `--oiii-boost`
+(≈1.5–2.5) / `--oiii-blur` (≈1–2) if the user wants more teal vs less noise, and let them pick.
+
+## Step 13 — Offer the LP+IRCUT composite (optional; only when both masters exist)
 
 The S30 Pro's two filters complement each other: the LP master carries the emission lines,
 the IRCUT master carries honest broadband star colours and continuum. When **both** a
@@ -365,7 +402,7 @@ Copy it to `DATADIR` with the other composite outputs. If the other run's raw li
 (only the master survives), fall back to concatenating that run's saved
 `astrobin_acquisition.csv` rows with this run's.
 
-## Step 13 — Offer cleanup (optional; last action; never automatic)
+## Step 14 — Offer cleanup (optional; last action; never automatic)
 
 The pipeline deliberately leaves a `.fit` + `.png` at **every** stage so the user can resume
 manually from any step — deleting those throws that away, so **never prune on your own**. As the
@@ -378,13 +415,12 @@ explicit confirmation.
    ```
 2. **State exactly what stays vs goes:**
    - **Keep:** `05_stretch/` (SPCC-calibrated master `<OBJECT>_final_spcc.fit`, the pre-SPCC
-     `<OBJECT>_final_solved.fit`, the palette master `<OBJECT>_final_HOO.fit` +
-     its PNG + the mono `<OBJECT>_final_Ha.fit` / `<OBJECT>_final_OIII.fit`
-     when Step 10 emitted, any Step-12 composite outputs, the final autostretch PNG
-     `<OBJECT>_final_stretch.png`, `astrobin.txt`, `astrobin_acquisition.csv`), `REPORT.md`,
-     and the deliverable **copies in `DATADIR`**. The final stretch preview and the palette
-     previews live here (in `05_stretch/`, not `previews/`), so removing `previews/` never
-     loses them.
+     `<OBJECT>_final_solved.fit`, the mono channel masters `<OBJECT>_final_Ha.fit` /
+     `<OBJECT>_final_OIII.fit` when Step 10 emitted, any Step-12 teal recombine outputs
+     (`<OBJECT>_final_HOO_teal.fit` + PNG) and any Step-13 composite outputs, the final
+     autostretch PNG `<OBJECT>_final_stretch.png`, `astrobin.txt`, `astrobin_acquisition.csv`),
+     `REPORT.md`, and the deliverable **copies in `DATADIR`**. The final stretch preview lives
+     here (in `05_stretch/`, not `previews/`), so removing `previews/` never loses it.
    - **Remove:** `01_stack/`, `02_background/`, `03_deconv/`, `04_denoise/`, `previews/`.
    - **Never touch:** the user's source lights, `<lights>/_jpg_aside/`,
      `<DATADIR>/_clouds_aside/`, and any `<DATADIR>/_<filter>_aside/` (quarantined

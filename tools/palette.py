@@ -1,21 +1,22 @@
 #!/usr/bin/env python
-"""Dual-band HOO palette master from a Seestar LP-filter RGB master.
+"""Dual-band Ha/OIII channel split from a Seestar LP-filter RGB master.
 
 The Seestar LP filter is dual-band: it passes only Ha (656 nm) and OIII (~500 nm).
 On the IMX585 OSC sensor the red channel carries Ha; green and blue carry OIII
 (green leaks ~10-15% of Ha). This tool splits a linear RGB master into Ha/OIII,
 measures whether the target actually shows emission-line separation, and (on EMIT)
-writes linear, stretch-ready masters with the input header + WCS intact:
+writes the two linear, stretch-ready mono masters with the input header + WCS intact:
 
-  <base>_HOO.fit    R=Ha, G=OIII, B=OIII              (red hydrogen / teal oxygen)
-  <base>_Ha.fit     mono Ha channel                   (for manual composition)
-  <base>_OIII.fit   mono OIII channel                 (for manual composition)
+  <base>_Ha.fit     mono Ha channel   (from R)
+  <base>_OIII.fit   mono OIII channel (from (G+B)/2)
 
-The mono channels exist because a linked stretch of the HOO cube renders Ha-dominant
-targets (Ha/OIII ~1.1-1.6 everywhere, e.g. Carina) uniformly red — the teal OIII only
-shows after stretching the O channel SEPARATELY (unlinked) to match Ha, which is a
-manual step. The channels are bg-neutralized to the same pedestal as the HOO cube,
-so a manual recomposition is consistent with it.
+Only the mono channels are emitted — no combined HOO cube. A linked stretch of an
+R=Ha,G=B=OIII cube renders Ha-dominant targets (e.g. Carina, Ha/OIII ~3x) uniformly
+red and is useless. The teal OIII colour is a non-linear, star-sensitive step: the
+user stretches each mono channel, removes stars (StarNet++/StarXTerminator), and
+feeds the two starless channels to hoo_recombine.py, which does LinearFit + a
+dynamic green blend + SCNR. The channels here are bg-neutralized to a common
+pedestal so that recombination is consistent.
 
 HOO is the only honest palette for dual-band data: there is no SII line in the
 filter, so an "SHO" would have to synthesize its S channel out of Ha — zero new
@@ -143,13 +144,8 @@ def emission_separation(ha, oiii):
     return spread
 
 
-def compose_hoo(ha, oiii):
-    """HOO: R=Ha, G=OIII, B=OIII."""
-    return np.stack([ha, oiii, oiii]).astype(np.float32)
-
-
 def write_master(path, cube, header, formula):
-    """Write a linear float32 palette master, input header + WCS intact."""
+    """Write a linear float32 channel master, input header + WCS intact."""
     hdr = header.copy()
     hdr.add_history(f"palette.py: {formula}")
     fits.writeto(path, np.clip(cube, 0.0, None).astype(np.float32), hdr, overwrite=True)
@@ -194,11 +190,6 @@ def main(argv=None):
     os.makedirs(outdir, exist_ok=True)
     base = args.basename or os.path.splitext(os.path.basename(args.master))[0]
     ha_n, oiii_n, _ = neutralize_background(ha, oiii)
-
-    hoo_path = os.path.join(outdir, f"{base}_HOO.fit")
-    write_master(hoo_path, compose_hoo(ha_n, oiii_n), header,
-                 "HOO: R=Ha(R), G=B=OIII((G+B)/2), bg-neutralized, linear")
-    print(f"wrote: {hoo_path}")
 
     ha_path = os.path.join(outdir, f"{base}_Ha.fit")
     write_master(ha_path, ha_n.astype(np.float32), header,
