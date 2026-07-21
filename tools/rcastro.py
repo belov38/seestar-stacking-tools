@@ -70,6 +70,26 @@ def probe_line():
     return f"RCASTRO: cli={version} {parts}"
 
 
+def _normalize_roworder(inp, out):
+    """The rc-astro CLI writes TOP-DOWN FITS (flipped pixels) regardless of the
+    input's row order; astropy/Siril read raw pixel order, so flip the output
+    back to the input's convention when the ROWORDER keywords disagree."""
+    from astropy.io import fits
+
+    import numpy as np
+
+    with fits.open(inp) as hdul:
+        in_order = hdul[0].header.get("ROWORDER", "BOTTOM-UP")
+    # memmap=False: flipping a memmapped HDU in update mode corrupts the file
+    # (rows are overwritten while still being read as the flip source)
+    with fits.open(out, mode="update", memmap=False) as hdul:
+        hdu = hdul[0]
+        out_order = hdu.header.get("ROWORDER", "BOTTOM-UP")
+        if out_order != in_order:
+            hdu.data = np.ascontiguousarray(hdu.data[..., ::-1, :])
+            hdu.header["ROWORDER"] = in_order
+
+
 def run_product(product, inp, out, extra):
     """Run one product on one file. Returns 0 on success (out exists), else non-zero."""
     cli = find_cli()
@@ -91,6 +111,10 @@ def run_product(product, inp, out, extra):
     if not os.path.exists(out):
         print(f"rcastro {product}: output not written: {out}", file=sys.stderr)
         return 1
+    base, ext = os.path.splitext(out)
+    for path in (out, base + "-stars" + ext):
+        if os.path.exists(path):
+            _normalize_roworder(inp, path)
     return 0
 
 

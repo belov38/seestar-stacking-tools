@@ -2,6 +2,9 @@
 import json
 import subprocess
 
+import numpy as np
+from astropy.io import fits
+
 import rcastro
 
 LICENSED = json.dumps({
@@ -90,22 +93,54 @@ def test_probe_oserror_is_no(monkeypatch):
     assert rcastro.probe_line() == "RCASTRO: cli=1.1.0 bxt=ok sxt=ok nxt=no"
 
 
+def _write_fits(path, data, roworder):
+    hdu = fits.PrimaryHDU(data.astype(np.float32))
+    hdu.header["ROWORDER"] = roworder
+    hdu.writeto(path, overwrite=True)
+
+
 def test_run_product_success(monkeypatch, tmp_path):
+    inp = tmp_path / "in.fit"
     out = tmp_path / "out.fit"
+    data = np.arange(60, dtype=np.float32).reshape(3, 4, 5)
+    _write_fits(inp, data, "BOTTOM-UP")
 
     def fake_run(cmd, **kwargs):
         assert cmd[:2] == ["/usr/local/bin/rc-astro", "--no-banner"]
         assert "--json" in cmd and "sxt" in cmd
         assert ["-o", str(out)] == cmd[cmd.index("-o"):cmd.index("-o") + 2]
         assert "--overwrite" in cmd and "--stars" in cmd
-        out.write_bytes(b"fits")
+        _write_fits(out, data, "BOTTOM-UP")
         events = '{"event":"status","phase":"complete","message":"Done"}\n'
         return subprocess.CompletedProcess(cmd, 0, stdout=events, stderr="")
 
     monkeypatch.setattr(rcastro, "find_cli", lambda: "/usr/local/bin/rc-astro")
     monkeypatch.setattr(rcastro.subprocess, "run", fake_run)
-    rc = rcastro.run_product("sxt", "in.fit", str(out), ["--stars"])
+    rc = rcastro.run_product("sxt", str(inp), str(out), ["--stars"])
     assert rc == 0
+    assert np.array_equal(fits.getdata(out), data)
+
+
+def test_run_product_normalizes_roworder(monkeypatch, tmp_path):
+    inp = tmp_path / "in.fit"
+    out = tmp_path / "out.fit"
+    sidecar = tmp_path / "out-stars.fit"
+    data = np.arange(60, dtype=np.float32).reshape(3, 4, 5)
+    _write_fits(inp, data, "BOTTOM-UP")
+
+    def fake_run(cmd, **kwargs):
+        # rc-astro writes TOP-DOWN: rows flipped relative to the input
+        flipped = data[..., ::-1, :]
+        _write_fits(out, flipped, "TOP-DOWN")
+        _write_fits(sidecar, flipped, "TOP-DOWN")
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(rcastro, "find_cli", lambda: "/usr/local/bin/rc-astro")
+    monkeypatch.setattr(rcastro.subprocess, "run", fake_run)
+    assert rcastro.run_product("sxt", str(inp), str(out), ["--stars"]) == 0
+    for path in (out, sidecar):
+        assert fits.getheader(path)["ROWORDER"] == "BOTTOM-UP"
+        assert np.array_equal(fits.getdata(path), data)
 
 
 def test_run_product_missing_output_fails(monkeypatch, tmp_path):
