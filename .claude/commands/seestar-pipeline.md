@@ -47,6 +47,11 @@ Input path: `$1` (a directory of raw lights, or a single stacked FITS).
 
 ## Universal rule — every step leaves a FITS *and* a PNG
 
+**Every `.fit` this pipeline writes is linear.** Stretched data exists only as `.png`
+previews — never save a stretched FITS (it confuses the linear deliverable set; the user's
+compositing tool works in the linear phase). The only stretched FITS that ever exist are
+`sxt-linear`'s internal MTF temp files, and it deletes them itself.
+
 After **every** processing step (Steps 4–10), whether it auto-adopts or stops, write the adopted
 result as **both** a header-preserved `.fit` in the step's output dir **and** a preview `.png` in
 `previews/`. Do this even when no user input is needed. Then print a one-line

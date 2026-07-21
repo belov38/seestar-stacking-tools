@@ -137,7 +137,8 @@ unlicensed, CLI absent, malformed JSON. No inference in tests.
 | `<OBJECT>_final_IRCUT_aligned.fit` | linear aligned IRCUT master (two-filter path) |
 
 Every layer is linear (decision 6 — the user's compositing tool mixes in the linear
-phase). All sxt outputs share the input's pixel grid; the two-filter path aligns first
+phase). **No stretched FITS is ever written** — stretch exists only in PNG previews;
+`sxt-linear`'s internal MTF temp files are deleted by the tool itself. All sxt outputs share the input's pixel grid; the two-filter path aligns first
 (`composite.py`, WCS reprojection), so every delivered layer is orientation-matched and
 composition-ready.
 
