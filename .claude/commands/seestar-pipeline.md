@@ -1,5 +1,5 @@
 ---
-description: Run a Seestar S30 frame through the full processing pipeline (explore → frame quality gate → stack → background → deconv → denoise → plate-solve → SPCC colour calibration → Ha/OIII channel split → stretch), auto-picking parameters by measurement, stopping only when a choice is doubtful, emitting AstroBin title/description + acquisition CSV, and offering an optional cleanup of intermediate files at the end. Filter-aware: routes LP vs IRCUT (broadband) sets into separate runs, offers an optional teal-OIII recombine from user-made starless channels, and an optional LP+IRCUT composite when both masters exist.
+description: Run a Seestar S30 frame through the full processing pipeline (explore → frame quality gate → stack → background → deconv → denoise → plate-solve → SPCC colour calibration → stretch), auto-picking parameters by measurement, stopping only when a choice is doubtful, emitting AstroBin title/description + acquisition CSV, and offering an optional cleanup of intermediate files at the end. Filter-aware: routes LP vs IRCUT (broadband) sets into separate runs, prefers licensed RC Astro tools (BXT/NXT/SXT) over the built-in path when present, and offers optional starless decomposition and two-filter star-layer deliverables (incl. an "LP → nebula, IRCUT → stars" mixed-session mode) for the user to compose in their own tool.
 argument-hint: <lights-dir | stack.fits>
 ---
 
@@ -26,6 +26,13 @@ Input path: `$1` (a directory of raw lights, or a single stacked FITS).
   `--move CLASSES --aside-dir DIR` quarantines).
 - LP+IRCUT composite: `tools/composite.py` (WCS-aligns an IRCUT master onto an LP master —
   natural-star-colour layer; `--mode hargb` adds continuum-subtracted Ha + HaRGB).
+- RC Astro CLI (optional, licensed per product): probe once with
+  `.venv/bin/python tools/rcastro.py probe` → one line, `RCASTRO: cli=1.1.0 bxt=ok sxt=ok
+  nxt=no` or `RCASTRO: absent`. `bxt` replaces Siril RL at Step 6, `nxt` replaces the
+  GraXpert sweep at Step 7, `sxt` powers Steps 11–12 — each only when its flag is `ok`;
+  otherwise the built-in path runs and nothing is said beyond the Step-1 summary line.
+  Run products via `.venv/bin/python tools/rcastro.py bxt|nxt|sxt IN.fit OUT.fit [args]`
+  (passthrough; exits non-zero on failure → warn, fall back, log to REPORT.md).
 - Processing order is **physically fixed**: stack → background extraction → deconvolution →
   denoise → plate-solve → **SPCC colour calibration** → stretch. Deconv and denoise run on
   **linear** data; denoise comes after deconv; plate-solve runs on the final linear master; SPCC
@@ -40,7 +47,7 @@ Input path: `$1` (a directory of raw lights, or a single stacked FITS).
 
 ## Universal rule — every step leaves a FITS *and* a PNG
 
-After **every** processing step (Steps 4–11), whether it auto-adopts or stops, write the adopted
+After **every** processing step (Steps 4–10), whether it auto-adopts or stops, write the adopted
 result as **both** a header-preserved `.fit` in the step's output dir **and** a preview `.png` in
 `previews/`. Do this even when no user input is needed. Then print a one-line
 `validate here: <abs .fit>  |  <abs .png>` so the user can open any intermediate in Siril and **pick
@@ -54,17 +61,20 @@ This step only inspects and tidies the input — it creates no run dir and touch
 
 1. **Deps:** `.venv/bin/python -c "import astropy,numpy,sep,scipy,PIL"`. If it fails, tell the
    user to run `.venv/bin/python -m pip install sep scipy pillow` and stop.
-2. **Explore the path `$1` the user pointed at** and report how their data is organized — run a
+2. **RC Astro probe:** run `.venv/bin/python tools/rcastro.py probe`, include the `RCASTRO:`
+   line in the "here's how your data is organized" summary and later in the REPORT.md header.
+   This is the only time tool availability is mentioned — downstream steps fall back quietly.
+3. **Explore the path `$1` the user pointed at** and report how their data is organized — run a
    shallow tree and inspect:
    - the layout: are the `.fit` directly in `$1`, in a `lights/` subdir, or is `$1` a single FITS?
    - the `.fit` count, and any `.jpg` count (Seestar thumbnails);
    - whether a Siril `process/r_pp_light_.seq` exists (→ reuse stacking) or not (→ full stack);
    - a representative FITS header (does it carry OBJECT/RA/DEC, or is it header-stripped?).
    Post a short **"here's how your data is organized"** summary before doing anything else.
-3. **Quarantine `.jpg`:** Seestar drops `.jpg` thumbnails that break Siril `link` — **move** (don't
+4. **Quarantine `.jpg`:** Seestar drops `.jpg` thumbnails that break Siril `link` — **move** (don't
    delete — reversible) any `.jpg` next to the lights into `<lights>/_jpg_aside/` and report the
    count.
-4. **Resolve `$1` to the Siril `lights/` convention.** The stacking `.ssf` scripts hardcode
+5. **Resolve `$1` to the Siril `lights/` convention.** The stacking `.ssf` scripts hardcode
    `cd lights`, so any other layout silently breaks at `link` — enforce it:
    - `$1` is (or ends in) **`lights/`** containing `.fit` → `LIGHTS=$1`, `DATADIR=dirname($1)`.
    - `$1` is a **dir containing a `lights/` subdir** → `DATADIR=$1`, `LIGHTS=$1/lights`.
@@ -73,18 +83,19 @@ This step only inspects and tidies the input — it creates no run dir and touch
    - `$1` is a **single FITS** → ready-stack mode (skip Steps 3–4; this file is the Step-5 base),
      `DATADIR=dirname($1)`. Warn if the header is stripped (no OBJECT/RA/DEC). (No `lights/` needed.)
    Then **validate**: `LIGHTS/` exists and holds ≥1 `.fit` (else error out).
-5. **Filter census (LP vs IRCUT) & routing.** The S30 Pro has two switchable filters, and every
+6. **Filter census (LP vs IRCUT) & routing.** The S30 Pro has two switchable filters, and every
    sub carries its filter in the filename (`_LP_` / `_IRCUT_`) and in the `FILTER` header
    keyword. Count subs per filter and set `RUN_FILTER`:
    - **all LP** → normal run (`RUN_FILTER=LP`).
    - **all IRCUT** → broadband run (`RUN_FILTER=IRCUT`): SPCC uses the generic `UV/IR Block`
-     profile (Step 9), the Ha/OIII channel-split step is skipped outright (Step 10), and
-     run/deliverable names carry an `IRCUT` tag (Step 2).
-   - **mixed** → never stack the two together — they are spectrally incompatible in one stack
-     (normalization, rejection and SPCC all break). **STOP and ask**, reporting per-filter sub
-     counts and integration minutes: quarantine the minority filter to
-     `<DATADIR>/_<filter>_aside/` (move, never delete — e.g. `_ircut_aside/`) and process the
-     majority now, or run the pipeline twice, once per filter.
+     profile (Step 9), and run/deliverable names carry an `IRCUT` tag (Step 2).
+   - **mixed** → never stack the two together. **STOP and ask**, reporting per-filter sub
+     counts and integration minutes. Options: quarantine the minority filter to
+     `<DATADIR>/_<filter>_aside/` and process the majority now; run the pipeline twice; or —
+     **only when sxt=ok** — **"LP → nebula, IRCUT → stars"**: the LP set runs the full
+     pipeline and the IRCUT subs move to `<DATADIR>/_ircut_stars/` for the Step-12 stars
+     mini-run (Path B). Recommend this third option when the IRCUT share is too small for a
+     standalone broadband run (roughly < 30 min).
    In ready-stack mode read `FILTER` from the input FITS header instead (missing → assume LP,
    say so).
 
@@ -97,7 +108,7 @@ This step only inspects and tidies the input — it creates no run dir and touch
    (exposure, filter) group (expect its "thresholds unstable" warning on groups of ≲20 frames —
    fine, small groups just get lenient gates), and the AstroBin CSV emits one row per
    (night, filter, exposure).
-6. **Read `OBJECT`** from a representative FITS (astropy) for naming; fall back to the basename.
+7. **Read `OBJECT`** from a representative FITS (astropy) for naming; fall back to the basename.
 
 ## Step 2 — Make the run dir (next to the user's data)
 
@@ -152,7 +163,7 @@ keep everything**. On the answer, quarantine — move, never delete:
 Log the decision, per-class counts, and the new frame count / integration total to `REPORT.md`.
 The AstroBin CSV (Finish step) scans `lights/` and so picks up the reduced set automatically.
 
-## The processing steps (Steps 4–11)
+## The processing steps (Steps 4–10)
 
 For each step: invoke the named skill (to load its current how-to), run its sweep with the
 binaries above, run its `measure_*.py`, generate the preview(s), apply the stop rule, then honor
@@ -162,16 +173,15 @@ the **universal rule** (FITS + PNG + `validate here:`).
 |---|---|---|---|---|
 | 4 | `seestar-stacking-compare` *(dir input only)* | `01_stack/` | verdict `KEEP BASELINE`, **or** a tuned win ≥3% faint-SNR that is **not** from star weighting | the winner is a `nbstars`/`wfwhm` (star-weighting) variant — volatile, confirm before adopting |
 | 5 | `seestar-background-extraction-compare` | `02_background/` | GraXpert AI: colour cast < ~1% and **not** `BACKFIRED` | cast not pulled under ~1%, or every method backfired |
-| 6 | `seestar-deconvolution-compare` | `03_deconv/` | ring depth comfortably above the floor **AND** a clear FWHM gain | **default to STOP** on any doubt — borderline ring depth, marginal FWHM, or visible rings in the preview |
-| 7 | `seestar-denoise-compare` | `04_denoise/` | strongest setting with FWHM Δ < ~3% **and** faint_keep > ~0.85 | even the lowest strength over-blurs → propose **skip denoise** |
+| 6 | `seestar-deconvolution-compare` | `03_deconv/` | bxt path (licensed): clean verdict from `measure_deconv.py` on a bxt variant | **default to STOP** on any doubt — borderline ring depth, marginal FWHM, or visible rings; bxt REJECT → keep baseline (no RL fallback sweep) |
+| 7 | `seestar-denoise-compare` | `04_denoise/` | strongest setting with FWHM Δ < ~3% **and** faint_keep > ~0.85 (nxt sweep when licensed, else GraXpert) | even the lowest strength over-blurs → propose **skip denoise** |
 | 8 | *(plate-solve — Siril, no skill)* | `05_stretch/` | always solve the final master (skip if already `PLTSOLVD`) | **warn + continue** if the solve fails (e.g. no internet) — keep the unsolved master |
 | 9 | *(SPCC colour calibration — Siril, no skill)* | `05_stretch/` | SPCC reports `succeeded` and the star-core G/R moves toward 1 — auto-adopt the calibrated master | **warn + continue** if SPCC fails (no internet / no `siril-spcc-database`) — keep the un-calibrated solved master |
-| 10 | *(Ha/OIII channel split — `tools/palette.py`, no skill)* | `05_stretch/` | LP runs: always — EMIT (write mono Ha/OIII) or SKIP decided by the emission-separation metric; IRCUT runs: skip outright; log either way | never |
-| 11 | *(stretch — manual, no skill)* | `05_stretch/` | — | **always present** the final result (stretch is the user's call) |
+| 10 | *(stretch — manual, no skill)* | `05_stretch/` | — | **always present** the final result (stretch is the user's call) |
 
-After Step 11 + Finish there are three **optional** post-steps: **Step 12** (teal-OIII recombine
-from user-made starless channels — offered on an EMIT run), **Step 13** (LP+IRCUT composite when
-both masters exist), **Step 14** (cleanup). All three only run on the user's say-so.
+After Step 10 + Finish there are three **optional** post-steps: **Step 11** (starless
+decomposition, sxt), **Step 12** (two-filter star layers, sxt), **Step 13** (cleanup).
+All three only run on the user's say-so.
 
 Notes per step:
 - **Step 4 (stack):** pick `experiment_reuse.ssf` if `process/r_pp_light_.seq` exists (you found this
@@ -181,13 +191,28 @@ Notes per step:
   dropped in Step 3, re-register (full script), don't reuse.
 - **Step 5 (background):** the skill's `background.py` runs the GraXpert AI model on the GPU.
   AI is the default; subsky usually backfires on star fields.
-- **Step 6 (deconv):** Siril RL (~10 it, optional `-tv`); `makepsf stars` first. This is the
-  trap step — measure **ring depth vs background**, not FWHM alone, and lean toward stopping.
-  Reject mfdeconv / Cosmic Clarity.
-- **Step 7 (denoise):** use the skill's `denoise.py` runner (GPU denoise, ~25s).
-  **Pass an absolute output path.** The denoiser is fast, so sweep **broad in one pass** —
-  ~0.1 / 0.15 / 0.2 / 0.3 / 0.5 / 0.8 / 0.9 — render a preview per variant, and pick by measurement. Deep
-  stacks usually want ~0.15–0.3 or skip; if even the lowest over-blurs, propose skip denoise.
+- **Step 6 (deconv):** if `bxt=ok`, the Siril RL sweep is **not run**. Run two bxt variants
+  on the linear master:
+  ```
+  .venv/bin/python tools/rcastro.py bxt IN.fit 03_deconv/bxt_default.fit --ss 0.5 --sn 1.0
+  .venv/bin/python tools/rcastro.py bxt IN.fit 03_deconv/bxt_correct.fit --correct-only
+  ```
+  then validate with the existing skill measurer:
+  `measure_deconv.py IN.fit 03_deconv/bxt_*.fit` — same adopt rule (FWHM gain ≥3% AND
+  ring_worst ≥ −1×RMS), same trap (never adopt on FWHM alone), same stop rule (doubt →
+  STOP with preview). REJECT → keep baseline; do **not** fall back to the RL sweep.
+  A failed bxt run (non-zero exit) → warn, run the normal Siril RL path instead.
+  If `bxt=no`: the skill's Siril RL path exactly as before (makepsf stars, ~10 it, -tv;
+  reject mfdeconv / Cosmic Clarity).
+- **Step 7 (denoise):** if `nxt=ok`, sweep NoiseXTerminator instead of GraXpert:
+  ```
+  for dn in 0.1 0.25 0.5 0.75 0.9:
+    .venv/bin/python tools/rcastro.py nxt IN.fit 04_denoise/nxt$dn.fit --dn $dn
+  ```
+  measure with the skill's `measure_denoise.py` (same adopt rule: strongest with
+  FWHM Δ < ~3% and faint_keep > ~0.85; all over-blur → propose skip). A failed nxt run →
+  warn, fall back to the GraXpert sweep. If `nxt=no`: the skill's GraXpert GPU sweep
+  (~0.1–0.9, absolute output paths) exactly as before.
 - **Step 8 (plate-solve):** copy the final adopted **linear, header-complete** FITS to
   `05_stretch/<OBJECT>_final_solved.fit`, then plate-solve it in Siril **seeded by the header**
   and **online** (queries the catalog; Seestar's RA/DEC + `FOCALLEN` + `XPIXSZ` make it fast):
@@ -226,41 +251,14 @@ Notes per step:
   frame-filling nebula — acceptable (background was already extracted in Step 5; the fit is still
   usable). **Measure the effect:** read bright-star-core R/G/B before vs after (top ~0.05% by
   luminance) and log the G/R move toward ~1 (e.g. 1.66 → 1.09) as the verdict. The adopted SPCC
-  master `<OBJECT>_final_spcc.fit` becomes the deliverable carried into Steps 10–11; keep the
+  master `<OBJECT>_final_spcc.fit` becomes the deliverable carried into Step 10; keep the
   pre-SPCC `<OBJECT>_final_solved.fit` too.
-- **Step 10 (Ha/OIII channel split — LP runs only):** the LP filter is dual-band (Ha 656 nm +
-  OIII ~500 nm), so an emission target carries a second free palette in the same data (Ha lives
-  in R, OIII in G+B). We emit **only the two linear mono channel masters** — **no combined HOO
-  cube**: a linked stretch of an R=Ha,G=B=OIII cube renders an Ha-dominant target (Carina,
-  Ha/OIII ~3× everywhere) uniformly red and is useless. There is no SII line either, so a
-  synthetic "SHO" carries zero information. On an **IRCUT run skip this step outright** and log
-  why: broadband R vs G+B is not Ha vs OIII — worse, Ha still lands in R, so an emission target
-  can *fake* a plausible separation score; don't trust the metric here (`palette.py` also
-  hard-skips any master whose `FILTER` header is not `LP`).
-  Run on the adopted master — `<OBJECT>_final_spcc.fit`, or `<OBJECT>_final_solved.fit`
-  if SPCC failed:
-  ```
-  .venv/bin/python tools/palette.py 05_stretch/<OBJECT>_final_spcc.fit \
-    --outdir 05_stretch --basename <OBJECT>_final
-  ```
-  It prints one parseable line: `PALETTES: EMIT (separation=..., threshold=...)` or
-  `PALETTES: SKIP (...)`. On **EMIT** it writes the mono masters `<OBJECT>_final_Ha.fit` and
-  `<OBJECT>_final_OIII.fit` — both linear, bg-neutralized to a common pedestal, header + WCS
-  intact, stretch-ready. These are the deliverable for emission targets and the input to the
-  optional **Step 12** teal recombine. The teal OIII colour is a non-linear, star-sensitive
-  step (needs starless data), so it is **not** done here — the user stretches each channel,
-  removes stars, and hands them back for Step 12. On **SKIP** (continuum target —
-  cluster/galaxy: star colours, not emission; the gate suppresses stars before measuring, see
-  FINDINGS.md) log the verdict line with the measured separation to REPORT.md and move on. This
-  step is always AUTO — never stop to ask; log the verdict to REPORT.md in both cases. (No PNG
-  preview here — a linked HOO preview would be the misleading all-red image; the channels are
-  previewed, if at all, only after Step 12.)
-- **Step 11 (stretch):** the colour-calibrated `05_stretch/<OBJECT>_final_spcc.fit` (or
+- **Step 10 (stretch):** the colour-calibrated `05_stretch/<OBJECT>_final_spcc.fit` (or
   `<OBJECT>_final_solved.fit` if SPCC failed) is the deliverable for the user's own stretch / curves
   (header + WCS + colour intact). Render a stretched full-frame PNG with `tools/preview.py` (no
   `--ref`) **from that calibrated master** as a visual deliverable, writing it **into the kept
   `05_stretch/` dir** as `05_stretch/<OBJECT>_final_stretch.png` (not `previews/`) so it survives
-  Step 14 cleanup. Do **not** auto-tune a stretch.
+  Step 13 cleanup. Do **not** auto-tune a stretch.
 
 ## Previews
 
@@ -291,7 +289,7 @@ universal rule) so the user can glance back if they want.
 
 ## Finish
 
-When Step 11 is done, produce the publication deliverables, then summarize.
+When Step 10 is done, produce the publication deliverables, then summarize.
 
 1. **AstroBin acquisition CSV** (stacking mode only — needs the raw lights):
    ```
@@ -309,100 +307,94 @@ When Step 11 is done, produce the publication deliverables, then summarize.
 2. **AstroBin title + description** → write `05_stretch/astrobin.txt`: a title (designation +
    common name, e.g. `NGC 2070 — Tarantula Nebula (Caldwell 103)`) and a description with scope
    (ZWO Seestar S30 / sensor / focal), the filter (`RUN_FILTER`), total integration (subs × dur
-   = hours, and stacked count if it differs), date range, and the **actual processing chain you
-   logged** (stack params → GraXpert AI bg → Siril RL params → GraXpert denoise strength →
-   plate-solved → SPCC colour calibration: `Sony IMX585` + the Step-9 filter profile). If
-   Step 10 emitted, mention the available mono Ha/OIII channel masters for the user's own
-   starless HOO/teal recombination.
+   = hours, and stacked count if it differs), date range, and
+   the **actual processing chain you logged** (stack params → GraXpert AI bg → BXT variant
+   *or* Siril RL params → NXT strength *or* GraXpert strength → plate-solved → SPCC:
+   `Sony IMX585` + the Step-9 filter profile) — name the tools that were actually adopted.
 3. **Copy the deliverables next to the input** so the user finds them with their data — into
    `DATADIR` (the parent of `LIGHTS/`, or beside the input FITS): the calibrated master
    `<OBJECT>_final_spcc.fit` (and `<OBJECT>_final_solved.fit` if SPCC ran — the pre-SPCC version),
-   the mono channel masters `<OBJECT>_final_Ha.fit` / `<OBJECT>_final_OIII.fit`
-   (if Step 10 emitted), `<OBJECT>_astrobin.txt`, `<OBJECT>_astrobin_acquisition.csv`,
-   `<OBJECT>_final_stretch.png`. (Any Step-12 teal recombine outputs are copied there too, when
-   the user runs it.)
+   `<OBJECT>_astrobin.txt`, `<OBJECT>_astrobin_acquisition.csv`, `<OBJECT>_final_stretch.png`.
+   (Any Step-11/12 layer outputs are copied there too, when the user runs those steps.)
 
 Then post a short summary: the per-step decisions, the deliverable paths (run dir `05_stretch/`
 **and** the copies in `DATADIR`), and the next manual steps (stretch curves — colour is already
 SPCC-calibrated, header + WCS intact). Do **not** commit anything (image data is gitignored; the
 user commits skills/tools, not run outputs).
 
-## Step 12 — Offer the teal-OIII recombine (optional; EMIT runs only; user makes the starless channels)
+## Step 11 — Offer starless decomposition (optional; sxt=ok; any run)
 
-Only when Step 10 **EMIT**ted (`<OBJECT>_final_Ha.fit` + `<OBJECT>_final_OIII.fit` exist). *Offer*
-it; never run it unasked, and skip the offer silently on a SKIP/IRCUT run. The teal OIII colour is
-a non-linear, star-sensitive step, so it needs data the pipeline deliberately does not produce
-itself: **stretched, starless** Ha and OIII. Set expectations honestly first — measure the
-OIII/Ha ratio and say where teal is even possible (on Carina, OIII ~3× weaker than Ha everywhere,
-so teal is confined to the bright core; the outer arms stay red — that is physics, not processing).
+*Offer* after Finish; never run unasked; skip the offer silently when `sxt` is not `ok`.
+The deliverable is composition-ready layers — the user composes in their own tool
+(e.g. Alchemy); the pipeline does **no** blending, no HOO, no palettes.
 
-**The handoff (the user does this in their own tool):**
-1. Stretch `<OBJECT>_final_Ha.fit` and `<OBJECT>_final_OIII.fit` **separately** (asinh/GHS/curves),
-   each to a comfortable display range — this is what lifts the ~3× weaker OIII to a comparable level.
-2. Remove stars from each (StarNet++/StarXTerminator — not bundled; the pipeline has no star-removal
-   tool). Ignore star colour entirely; it is discarded with the stars.
-3. Save the two starless mono files next to the run, e.g. `<OBJECT>_final_Ha_starless.fit` and
-   `<OBJECT>_final_OIII_starless.fit`, and tell the agent to continue.
+1. **Stretch the adopted master** — if the user has placed their own
+   `<OBJECT>_final_stretched.fit` in `05_stretch/`, use it (say so). Otherwise:
+   ```
+   load <OBJECT>_final_spcc        # or _final_solved if SPCC failed
+   autostretch
+   save <OBJECT>_final_stretched
+   ```
+2. **Decompose:**
+   ```
+   .venv/bin/python tools/rcastro.py sxt 05_stretch/<OBJECT>_final_stretched.fit \
+     05_stretch/<OBJECT>_final_starless.fit --stars --unscreen
+   ```
+   → `<OBJECT>_final_starless.fit` (nebula/galaxy layer) + the stars sidecar
+   `<OBJECT>_final_starless-stars.fit`; rename the sidecar to `<OBJECT>_final_stars.fit`.
+   Both share the input's pixel grid — sxt never moves pixels, so the layers are
+   orientation-matched by construction.
+3. **Deliver:** previews of both layers into `05_stretch/` (they must survive cleanup),
+   log to REPORT.md, copy both layers to DATADIR.
 
-**On resume**, run the recombine on the two starless channels:
-```
-.venv/bin/python tools/hoo_recombine.py \
-  05_stretch/<OBJECT>_final_Ha_starless.fit 05_stretch/<OBJECT>_final_OIII_starless.fit \
-  --out 05_stretch/<OBJECT>_final_HOO_teal.fit
-```
-`hoo_recombine.py` does: LinearFit Ha→OIII (ref=OIII, so weak OIII is not swallowed) → a mild
-gaussian blur on OIII (`--oiii-blur`, chroma denoise — the main defence against boosted-OIII colour
-noise) → optional `--oiii-boost` → the **dynamic green blend** `w=(O·Ha)^(1−O·Ha); R=Ha,
-G=w·Ha+(1−w)·O, B=O` (OIII shows only where it is really present, instead of flat G=OIII greying the
-frame) → average-neutral SCNR green. It prints `RECOMBINE: TEAL (linfit a=…, b=…, blur=…, boost=…)`
-and writes `<OBJECT>_final_HOO_teal.fit` + `.png` (RGB, header/WCS from the Ha input). Since the
-inputs are already stretched, the output is a finished colour image — the user does final curves.
-Preview it, log the line to `REPORT.md`, and copy the outputs to `DATADIR`. Sweep `--oiii-boost`
-(≈1.5–2.5) / `--oiii-blur` (≈1–2) if the user wants more teal vs less noise, and let them pick.
+A failed sxt run → warn, keep whatever exists (at minimum the stretched master), never
+fail the pipeline.
 
-## Step 13 — Offer the LP+IRCUT composite (optional; only when both masters exist)
+## Step 12 — Offer two-filter star layers (optional; sxt=ok; LP + IRCUT data)
 
-The S30 Pro's two filters complement each other: the LP master carries the emission lines,
-the IRCUT master carries honest broadband star colours and continuum. When **both** a
-plate-solved LP master and a plate-solved IRCUT master of the **same object** exist — this
-run's deliverable plus a `*_final_spcc.fit` / `*_final_solved.fit` from an earlier run in
-`DATADIR` — *offer* the composite; never run it unasked, and skip the offer silently when only
-one filter's master exists:
+The LP master carries the emission/nebula signal; IRCUT subs carry honest broadband star
+colour (stars need little SNR). *Offer* when sxt=ok and either applies; never run unasked.
 
-```
-.venv/bin/python tools/composite.py <LP master>.fit <IRCUT master>.fit \
-  --outdir 05_stretch --basename <OBJECT>_final [--mode hargb]
-```
+**Path A — two plate-solved masters exist** (this run + an earlier run in DATADIR):
+1. `tools/composite.py <LP> <IRCUT> --mode align` → `<OBJECT>_final_IRCUT_aligned.fit`
+   (WCS reprojection onto the LP grid — from here every file shares one orientation).
+   Log the `COMPOSITE: ALIGN (…, coverage=…)` line; low coverage → say the masters barely
+   overlap.
+2. Stretch both (same rule as Step 11: user-provided `*_stretched.fit` wins, else Siril
+   `autostretch`): LP master → `<OBJECT>_final_stretched.fit`; aligned IRCUT →
+   `<OBJECT>_final_IRCUT_stretched.fit`.
+3. Two sxt calls:
+   - LP: `rcastro.py sxt <OBJECT>_final_stretched.fit <OBJECT>_final_starless.fit`
+     (starless nebula base; LP star colour is discarded — the LP filter guts continuum);
+   - IRCUT: `rcastro.py sxt <OBJECT>_final_IRCUT_stretched.fit
+     <OBJECT>_final_IRCUT_starless_tmp.fit --stars --unscreen` — keep only the stars
+     sidecar `<OBJECT>_final_IRCUT_starless_tmp-stars.fit`, renamed
+     `<OBJECT>_final_IRCUT_stars.fit`; delete the tmp starless.
+4. Deliver layers as-is: `starless` + `IRCUT_stars` (+ linear `IRCUT_aligned` for users who
+   want their own stretch). No blending.
+5. Previews into `05_stretch/`, REPORT lines, DATADIR copies, and the combined acquisition
+   CSV over both `lights/` dirs (existing mechanics):
+   ```
+   .venv/bin/python tools/astrobin_session_csv.py <this run's LIGHTS> <other run's LIGHTS> \
+     --out 05_stretch/<OBJECT>_combined_astrobin_acquisition.csv
+   ```
+   Copy it to `DATADIR` with the other outputs. If the other run's raw lights are gone (only
+   the master survives), fall back to concatenating that run's saved
+   `astrobin_acquisition.csv` rows with this run's.
 
-- `--mode align` (default) → `<OBJECT>_final_IRCUT_aligned.fit`: the IRCUT master reprojected
-  onto the LP master's pixel grid (WCS-based — both must be plate-solved). This is the
-  **natural-star-colour layer**: recompose it over a starless stretch of the LP/HOO master and
-  the stars lose the LP filter's gutted continuum. Useful already at ~40 min of IRCUT
-  integration — stars need little SNR.
-- `--mode hargb` → additionally `<OBJECT>_final_Ha.fit` (mono, continuum-subtracted:
-  `Ha = LP_R − k·IRCUT_R`, k measured on bright continuum pixels) and
-  `<OBJECT>_final_HaRGB.fit` (Ha blended into the broadband red). Worth offering only with
-  **hours** of IRCUT — the broadband base must stand on its own.
+**Path B — "LP → nebula, IRCUT → stars" was chosen at Step 1** (`_ircut_stars/` exists):
+run a **stars mini-run** first, all intermediates under `<RUN>/stars_run/`:
+1. Step-3 quality gate on `_ircut_stars/` (cloudy IRCUT subs are as useless as cloudy LP);
+2. stack: baseline winsor 3/3 only, no variant sweep (stars don't need the contest);
+3. background extraction (GraXpert AI, default smoothing);
+4. plate-solve + SPCC with `"-oscfilter=UV/IR Block"`;
+5. deconv/denoise: **skipped** (stars don't need them);
+then continue exactly as Path A from item 1, using the mini-run master as the IRCUT master.
 
-It prints a parseable `COMPOSITE: ALIGN/HARGB (k=…, coverage=…)` line — log it to `REPORT.md`
-(low coverage means the two masters barely overlap; say so). Render previews with
-`tools/preview.py` into `05_stretch/` and copy the outputs to `DATADIR` like the other
-deliverables.
+Without sxt this step is not offered; the old `--mode align` / `--mode hargb` composite
+remains available to the user manually via `tools/composite.py`.
 
-When the composite is built, also emit a **combined acquisition CSV** — the composite image
-uses both filters' subs, so its AstroBin import must cover both sets. Pass every `lights/`
-dir involved (the tool merges and date-sorts the rows):
-
-```
-.venv/bin/python tools/astrobin_session_csv.py <this run's LIGHTS> <other run's LIGHTS> \
-  --out 05_stretch/<OBJECT>_combined_astrobin_acquisition.csv
-```
-
-Copy it to `DATADIR` with the other composite outputs. If the other run's raw lights are gone
-(only the master survives), fall back to concatenating that run's saved
-`astrobin_acquisition.csv` rows with this run's.
-
-## Step 14 — Offer cleanup (optional; last action; never automatic)
+## Step 13 — Offer cleanup (optional; last action; never automatic)
 
 The pipeline deliberately leaves a `.fit` + `.png` at **every** stage so the user can resume
 manually from any step — deleting those throws that away, so **never prune on your own**. As the
@@ -415,21 +407,23 @@ explicit confirmation.
    ```
 2. **State exactly what stays vs goes:**
    - **Keep:** `05_stretch/` (SPCC-calibrated master `<OBJECT>_final_spcc.fit`, the pre-SPCC
-     `<OBJECT>_final_solved.fit`, the mono channel masters `<OBJECT>_final_Ha.fit` /
-     `<OBJECT>_final_OIII.fit` when Step 10 emitted, any Step-12 teal recombine outputs
-     (`<OBJECT>_final_HOO_teal.fit` + PNG) and any Step-13 composite outputs, the final
-     autostretch PNG `<OBJECT>_final_stretch.png`, `astrobin.txt`, `astrobin_acquisition.csv`),
-     `REPORT.md`, and the deliverable **copies in `DATADIR`**. The final stretch preview lives
-     here (in `05_stretch/`, not `previews/`), so removing `previews/` never loses it.
-   - **Remove:** `01_stack/`, `02_background/`, `03_deconv/`, `04_denoise/`, `previews/`.
+     `<OBJECT>_final_solved.fit`, any Step-11 starless/stars layers and any Step-12 two-filter
+     layer outputs, the final autostretch PNG `<OBJECT>_final_stretch.png`, `astrobin.txt`,
+     `astrobin_acquisition.csv`), `REPORT.md`, and the deliverable **copies in `DATADIR`**.
+     The final stretch preview lives here (in `05_stretch/`, not `previews/`), so removing
+     `previews/` never loses it.
+   - **Remove:** `01_stack/`, `02_background/`, `03_deconv/`, `04_denoise/`, `previews/`,
+     and `stars_run/` when a Path-B mini-run created it (its final layers already live in
+     `05_stretch/`).
    - **Never touch:** the user's source lights, `<lights>/_jpg_aside/`,
      `<DATADIR>/_clouds_aside/`, and any `<DATADIR>/_<filter>_aside/` (quarantined
      other-filter subs) — those are the user's own originals, not pipeline output.
 3. **Ask a yes/no question** with the measured size (e.g. "Permanently delete the intermediates
    and reclaim ~1.4 GB? `05_stretch/` + `REPORT.md` + the `DATADIR` copies are kept; this can't be
    undone"). **Wait** for the answer.
-4. On **yes**, permanently remove only those five paths:
+4. On **yes**, permanently remove only those paths:
    ```
    rm -rf "$RUN"/{01_stack,02_background,03_deconv,04_denoise,previews}
+   rm -rf "$RUN"/stars_run   # only if a Path-B mini-run created it
    ```
    then confirm what was freed and what remains. On **no**, leave everything untouched and say so.
