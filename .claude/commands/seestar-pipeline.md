@@ -328,27 +328,22 @@ user commits skills/tools, not run outputs).
 The deliverable is composition-ready layers — the user composes in their own tool
 (e.g. Alchemy); the pipeline does **no** blending, no HOO, no palettes.
 
-1. **Stretch the adopted master** — if the user has placed their own
-   `*_stretched.fit` for the master in `05_stretch/`, use it (say so). Otherwise:
+1. **Decompose the linear master** — no stretch anywhere in this step; the layers stay
+   linear and the user stretches them in their own tool:
    ```
-   load <OBJECT>_final_spcc        # or _final_solved if SPCC failed
-   autostretch
-   save <OBJECT>_final_stretched
-   ```
-2. **Decompose:**
-   ```
-   .venv/bin/python tools/rcastro.py sxt 05_stretch/<OBJECT>_final_stretched.fit \
+   .venv/bin/python tools/rcastro.py sxt 05_stretch/<OBJECT>_final_spcc.fit \
      05_stretch/<OBJECT>_final_starless.fit --stars --unscreen
    ```
-   → `<OBJECT>_final_starless.fit` (nebula/galaxy layer) + the stars sidecar
+   (input is `<OBJECT>_final_solved.fit` if SPCC failed)
+   → `<OBJECT>_final_starless.fit` (linear nebula/galaxy layer) + the stars sidecar
    `<OBJECT>_final_starless-stars.fit`; rename the sidecar to `<OBJECT>_final_stars.fit`.
    Both share the input's pixel grid — sxt never moves pixels, so the layers are
-   orientation-matched by construction.
-3. **Deliver:** previews of both layers into `05_stretch/` (they must survive cleanup),
-   log to REPORT.md, copy the stretched master and both layers to DATADIR.
+   orientation-matched by construction, header + WCS intact.
+2. **Deliver:** previews of both layers into `05_stretch/` (`tools/preview.py`
+   auto-stretches for the PNG only — the `.fit` layers stay linear; they must survive
+   cleanup), log to REPORT.md, copy both layers to DATADIR.
 
-A failed sxt run → warn, keep whatever exists (at minimum the stretched master), never
-fail the pipeline.
+A failed sxt run → warn, skip the step, never fail the pipeline.
 
 ## Step 12 — Offer two-filter star layers (optional; sxt=ok; LP + IRCUT data)
 
@@ -360,19 +355,19 @@ colour (stars need little SNR). *Offer* when sxt=ok and either applies; never ru
    (WCS reprojection onto the LP grid — from here every file shares one orientation).
    Log the `COMPOSITE: ALIGN (…, coverage=…)` line; low coverage → say the masters barely
    overlap.
-2. Stretch both (same rule as Step 11: user-provided `*_stretched.fit` wins, else Siril
-   `autostretch`): LP master → `<OBJECT>_final_stretched.fit`; aligned IRCUT →
-   `<OBJECT>_final_IRCUT_stretched.fit`.
-3. Two sxt calls:
-   - LP: `rcastro.py sxt <OBJECT>_final_stretched.fit <OBJECT>_final_starless.fit`
-     (starless nebula base; LP star colour is discarded — the LP filter guts continuum);
-   - IRCUT: `rcastro.py sxt <OBJECT>_final_IRCUT_stretched.fit
+2. Two sxt calls — both on **linear** data, no stretch anywhere in this step (the user
+   stretches the layers in their own tool):
+   - LP: `rcastro.py sxt <OBJECT>_final_spcc.fit <OBJECT>_final_starless.fit`
+     (linear starless nebula base; LP star colour is discarded — the LP filter guts
+     continuum);
+   - IRCUT: `rcastro.py sxt <OBJECT>_final_IRCUT_aligned.fit
      <OBJECT>_final_IRCUT_starless_tmp.fit --stars --unscreen` — keep only the stars
      sidecar `<OBJECT>_final_IRCUT_starless_tmp-stars.fit`, renamed
      `<OBJECT>_final_IRCUT_stars.fit`; delete the tmp starless.
-4. Deliver layers as-is: `starless` + `IRCUT_stars` (+ linear `IRCUT_aligned` for users who
-   want their own stretch). No blending.
-5. Previews into `05_stretch/`, REPORT lines, DATADIR copies, and the combined acquisition
+3. Deliver layers as-is: linear `starless` + `IRCUT_stars` (+ linear `IRCUT_aligned`).
+   No blending.
+4. Previews into `05_stretch/` (auto-stretched PNGs only — the `.fit` layers stay linear),
+   REPORT lines, DATADIR copies, and the combined acquisition
    CSV over both `lights/` dirs (existing mechanics):
    ```
    .venv/bin/python tools/astrobin_session_csv.py <this run's LIGHTS> <other run's LIGHTS> \
@@ -390,7 +385,7 @@ run a **stars mini-run** first, all intermediates under `<RUN>/stars_run/`:
 4. plate-solve + SPCC with `"-oscfilter=UV/IR Block"`;
 5. deconv/denoise: **skipped** (stars don't need them);
 then continue exactly as Path A from item 1, using the mini-run master as the IRCUT master.
-(For the combined acquisition CSV in item 5, the second subs directory is
+(For the combined acquisition CSV in item 4, the second subs directory is
 `<DATADIR>/_ircut_stars/` — there is no second `lights/` dir in Path B.)
 
 Without sxt this step is not offered; the old `--mode align` / `--mode hargb` composite

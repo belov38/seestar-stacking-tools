@@ -41,9 +41,11 @@ licensed → preferred; absent → the existing built-in path runs unchanged, qu
 5. **Mixed-filter sessions gain a third routing option:** "LP → nebula, IRCUT → stars"
    (available only when sxt is licensed) — the LP majority runs the full pipeline, the IRCUT
    subs are set aside for a stars-only mini-run consumed by the two-filter layers step.
-6. **User stretch wins:** wherever the pipeline needs a stretched frame for sxt, it uses a
-   deterministic Siril `autostretch`; if the user has placed their own `*_stretched.fit`
-   next to the run (e.g. a GHS stretch), the pipeline picks that up instead.
+6. **Layers stay linear — no stretch in the pipeline's sxt steps.** sxt runs directly on
+   the linear masters and the delivered layers are linear: the user's compositing tool
+   (VeraLux Alchemy) does its narrowband normalization and mixing in the linear phase, so
+   a pre-stretched layer would be wrong input. (Step 10's autostretch PNG preview is
+   unaffected — it is a visual deliverable, not a layer.)
 
 ## Renumbered pipeline
 
@@ -60,8 +62,8 @@ licensed → preferred; absent → the existing built-in path runs unchanged, qu
 | 9 | SPCC | unchanged |
 | 10 | Stretch | unchanged (was Step 11); the old Step 10 (Ha/OIII split) is deleted per decision 4 |
 | — | Finish | astrobin.txt processing chain reflects the adopted tools (BXT/NXT when used); Ha/OIII master mentions and copies removed |
-| 11 | Starless decomposition *(optional; sxt licensed; any run)* | new — replaces the old Step 12 (teal recombine). (a) stretch the adopted master: Siril `autostretch` → `<OBJECT>_final_stretched.fit`, unless a user-provided `*_stretched.fit` exists; (b) `rcastro.py sxt <stretched> <OBJECT>_final_starless.fit --stars --unscreen` → also writes `<OBJECT>_final_stars.fit`; both on the same pixel grid (sxt never moves pixels). (c) previews into `05_stretch/`, REPORT lines, copies to DATADIR. Offered, never auto-run; not offered without sxt. |
-| 12 | Two-filter star layers *(optional; sxt licensed; LP + IRCUT data)* | replaces the old Step 13 composite offer. Path A (two full masters): `composite.py --mode align` → stretch both (autostretch / user override) → LP `sxt` → `<OBJECT>_final_starless.fit`; IRCUT `sxt --stars --unscreen` → `<OBJECT>_final_IRCUT_stars.fit`. Path B (IRCUT minority from Step 1): stars mini-run on `_ircut_stars/`, all intermediates under `<RUN>/stars_run/` — Step 3 gate → stack (baseline winsor 3/3, no sweep) → background extraction → plate-solve → SPCC (`UV/IR Block`); deconv/denoise skipped (stars don't need them) — then align/stretch/sxt as Path A. Deliver layers as-is (starless + stars + linear `IRCUT_aligned`), no blending. Combined acquisition CSV covers both sub sets. Without sxt this step is not offered; `tools/composite.py` (`--mode align`/`--mode hargb`) remains available as a manual tool. |
+| 11 | Starless decomposition *(optional; sxt licensed; any run)* | new — replaces the old Step 12 (teal recombine). `rcastro.py sxt <OBJECT>_final_spcc.fit <OBJECT>_final_starless.fit --stars --unscreen` on the **linear** master (no stretch anywhere in this step) → linear `<OBJECT>_final_starless.fit` + `<OBJECT>_final_stars.fit`; both on the same pixel grid (sxt never moves pixels), header + WCS intact. Previews into `05_stretch/` (auto-stretched PNGs only), REPORT lines, copies to DATADIR. Offered, never auto-run; not offered without sxt. |
+| 12 | Two-filter star layers *(optional; sxt licensed; LP + IRCUT data)* | replaces the old Step 13 composite offer. Path A (two full masters): `composite.py --mode align` → both sxt calls on **linear** data (no stretch): LP master `sxt` → `<OBJECT>_final_starless.fit`; aligned IRCUT `sxt --stars --unscreen` → `<OBJECT>_final_IRCUT_stars.fit`. Path B (IRCUT minority from Step 1): stars mini-run on `_ircut_stars/`, all intermediates under `<RUN>/stars_run/` — Step 3 gate → stack (baseline winsor 3/3, no sweep) → background extraction → plate-solve → SPCC (`UV/IR Block`); deconv/denoise skipped (stars don't need them) — then align/stretch/sxt as Path A. Deliver layers as-is (starless + stars + linear `IRCUT_aligned`), no blending. Combined acquisition CSV covers both sub sets. Without sxt this step is not offered; `tools/composite.py` (`--mode align`/`--mode hargb`) remains available as a manual tool. |
 | 13 | Cleanup | unchanged (was Step 14); `<RUN>/stars_run/` intermediates included in the prunable set (its final layers are already in `05_stretch/`) |
 
 ## Components
@@ -123,13 +125,13 @@ unlicensed, CLI absent, malformed JSON. No inference in tests.
 | File | What |
 |---|---|
 | `<OBJECT>_final_spcc.fit` | linear calibrated master (unchanged) |
-| `<OBJECT>_final_stretched.fit` | stretched master (autostretch or user-provided) |
-| `<OBJECT>_final_starless.fit` | nebula/galaxy layer, no stars |
-| `<OBJECT>_final_stars.fit` | stars layer (single-filter run) |
-| `<OBJECT>_final_IRCUT_stars.fit` | broadband-colour stars layer (two-filter path) |
+| `<OBJECT>_final_starless.fit` | linear nebula/galaxy layer, no stars |
+| `<OBJECT>_final_stars.fit` | linear stars layer (single-filter run) |
+| `<OBJECT>_final_IRCUT_stars.fit` | linear broadband-colour stars layer (two-filter path) |
 | `<OBJECT>_final_IRCUT_aligned.fit` | linear aligned IRCUT master (two-filter path) |
 
-All sxt outputs share the input's pixel grid; the two-filter path aligns first
+Every layer is linear (decision 6 — the user's compositing tool mixes in the linear
+phase). All sxt outputs share the input's pixel grid; the two-filter path aligns first
 (`composite.py`, WCS reprojection), so every delivered layer is orientation-matched and
 composition-ready.
 
@@ -138,7 +140,7 @@ composition-ready.
 - Probe never blocks the pipeline; `absent`/`no` simply select the fallback path.
 - A failed rc-astro run at Steps 6/7 (crash, missing output) → warn, fall back to the
   built-in method for that step, log to REPORT.md.
-- A failed sxt at Steps 11/12 → warn, deliver what exists (e.g. stretched master only),
+- A failed sxt at Steps 11/12 → warn, skip the step (deliver whatever layers exist),
   never fail the run.
 - License expiry mid-usage surfaces as a product error → same fallback behavior.
 
