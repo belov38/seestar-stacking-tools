@@ -45,6 +45,23 @@ blur, not lost stars). ~0.3 banks a real ~18% noise cut for <3% blur.
 ../../../.venv/bin/python ../../../tools/gpu/fetch_models.py
 ```
 
+## RC Astro path (NoiseXTerminator) — preferred when licensed
+
+If `tools/rcastro.py probe` reports `nxt=ok`, sweep NoiseXTerminator instead of GraXpert
+(same linear input, same measurement):
+
+```
+for dn in 0.1 0.25 0.5 0.75 0.9; do
+  ../../../.venv/bin/python ../../../tools/rcastro.py nxt stack.fit nxt$dn.fit --dn $dn
+done
+python measure_denoise.py stack.fit nxt0.1.fit nxt0.25.fit nxt0.5.fit nxt0.75.fit nxt0.9.fit
+```
+
+The adopt rule is unchanged: strongest noise drop with FWHM Δ < ~3% AND faint_keep > ~0.85;
+if even 0.1 over-blurs, skip denoise. A failed nxt run → fall back to the GraXpert sweep
+below. `--dn` scales overall strength; leave the frequency/channel splits (`--dihf` etc.)
+at their defaults unless chasing a measured artifact.
+
 ## Workflow
 1. **Sweep strengths** with the runner. The GPU denoiser is
    fast (~25-30 s/run), so sweep **broad in one pass** rather than 3 points — it costs little and
