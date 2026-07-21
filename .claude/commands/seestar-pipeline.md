@@ -329,7 +329,7 @@ The deliverable is composition-ready layers — the user composes in their own t
 (e.g. Alchemy); the pipeline does **no** blending, no HOO, no palettes.
 
 1. **Stretch the adopted master** — if the user has placed their own
-   `<OBJECT>_final_stretched.fit` in `05_stretch/`, use it (say so). Otherwise:
+   `*_stretched.fit` for the master in `05_stretch/`, use it (say so). Otherwise:
    ```
    load <OBJECT>_final_spcc        # or _final_solved if SPCC failed
    autostretch
@@ -345,7 +345,7 @@ The deliverable is composition-ready layers — the user composes in their own t
    Both share the input's pixel grid — sxt never moves pixels, so the layers are
    orientation-matched by construction.
 3. **Deliver:** previews of both layers into `05_stretch/` (they must survive cleanup),
-   log to REPORT.md, copy both layers to DATADIR.
+   log to REPORT.md, copy the stretched master and both layers to DATADIR.
 
 A failed sxt run → warn, keep whatever exists (at minimum the stretched master), never
 fail the pipeline.
@@ -390,6 +390,8 @@ run a **stars mini-run** first, all intermediates under `<RUN>/stars_run/`:
 4. plate-solve + SPCC with `"-oscfilter=UV/IR Block"`;
 5. deconv/denoise: **skipped** (stars don't need them);
 then continue exactly as Path A from item 1, using the mini-run master as the IRCUT master.
+(For the combined acquisition CSV in item 5, the second subs directory is
+`<DATADIR>/_ircut_stars/` — there is no second `lights/` dir in Path B.)
 
 Without sxt this step is not offered; the old `--mode align` / `--mode hargb` composite
 remains available to the user manually via `tools/composite.py`.

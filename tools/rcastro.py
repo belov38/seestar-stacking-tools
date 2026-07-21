@@ -46,10 +46,14 @@ def probe_line():
     version = "?"
     states = {}
     for product in PRODUCTS:
-        proc = subprocess.run(
-            [cli, "--no-banner", "--json", product, "--license"],
-            capture_output=True, text=True,
-        )
+        try:
+            proc = subprocess.run(
+                [cli, "--no-banner", "--json", product, "--license"],
+                capture_output=True, text=True, timeout=30,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            states[product] = "no"
+            continue
         ok = False
         if proc.returncode == 0:
             try:

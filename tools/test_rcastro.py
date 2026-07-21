@@ -2,8 +2,6 @@
 import json
 import subprocess
 
-import pytest
-
 import rcastro
 
 LICENSED = json.dumps({
@@ -60,6 +58,36 @@ def test_probe_product_error_is_no(monkeypatch):
     responses["bxt"] = (1, "")
     monkeypatch.setattr(rcastro.subprocess, "run", _mock_run(responses))
     assert rcastro.probe_line() == "RCASTRO: cli=1.1.0 bxt=no sxt=ok nxt=ok"
+
+
+def test_probe_timeout_is_no(monkeypatch):
+    monkeypatch.setattr(rcastro, "find_cli", lambda: "/usr/local/bin/rc-astro")
+    responses = {p: (0, LICENSED) for p in rcastro.PRODUCTS}
+
+    def run(cmd, **kwargs):
+        product = next(p for p in rcastro.PRODUCTS if p in cmd)
+        if product == "sxt":
+            raise subprocess.TimeoutExpired(cmd="rc-astro", timeout=30)
+        rc, out = responses[product]
+        return subprocess.CompletedProcess(cmd, rc, stdout=out, stderr="")
+
+    monkeypatch.setattr(rcastro.subprocess, "run", run)
+    assert rcastro.probe_line() == "RCASTRO: cli=1.1.0 bxt=ok sxt=no nxt=ok"
+
+
+def test_probe_oserror_is_no(monkeypatch):
+    monkeypatch.setattr(rcastro, "find_cli", lambda: "/usr/local/bin/rc-astro")
+    responses = {p: (0, LICENSED) for p in rcastro.PRODUCTS}
+
+    def run(cmd, **kwargs):
+        product = next(p for p in rcastro.PRODUCTS if p in cmd)
+        if product == "nxt":
+            raise OSError("binary vanished")
+        rc, out = responses[product]
+        return subprocess.CompletedProcess(cmd, rc, stdout=out, stderr="")
+
+    monkeypatch.setattr(rcastro.subprocess, "run", run)
+    assert rcastro.probe_line() == "RCASTRO: cli=1.1.0 bxt=ok sxt=ok nxt=no"
 
 
 def test_run_product_success(monkeypatch, tmp_path):
