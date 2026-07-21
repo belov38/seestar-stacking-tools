@@ -66,7 +66,7 @@ there, and run `/seestar-pipeline <lights-dir | stack.fits>`.
 ## Automated install (LLM agent runbook)
 
 Each step probes first and only acts on a miss, so the whole runbook is idempotent. Print
-what you probe and what you decide. Do not claim success until Step 7 passes.
+what you probe and what you decide. Do not claim success until Step 8 passes.
 
 **Step 0 — Preconditions.** Confirm macOS:
 
@@ -128,7 +128,20 @@ the directory is already this clone, skip the clone and `cd` into it.
 .venv/bin/python tools/gpu/fetch_models.py
 ```
 
-**Step 7 — Verify (hard gate; do not advance until all pass).**
+**Step 7 — RC Astro tools (optional, licensed).** Ask the user: "Do you own RC Astro
+licenses (BlurXTerminator / StarXTerminator / NoiseXTerminator)?"
+- **No** → skip; the pipeline runs fully on the built-in tools (Siril RL, GraXpert GPU).
+- **Yes** → the user downloads and installs the CLI themselves from
+  https://www.rc-astro.com (requires their RC Astro account; no Homebrew formula). Then:
+  1. verify: `rc-astro` on PATH (or `/usr/local/bin/rc-astro`);
+  2. the user activates each owned product **themselves** — license keys must not pass
+     through the agent — by typing `! rc-astro bxt --activate` (and `sxt` / `nxt`) in the
+     session, or running it in their own terminal;
+  3. `rc-astro download-models`;
+  4. verify: `.venv/bin/python tools/rcastro.py probe` → expect `bxt=ok` etc. for the
+     owned products.
+
+**Step 8 — Verify (hard gate; do not advance until all pass).**
 
 ```
 .venv/bin/python -m pytest -q .claude/skills/seestar-stacking-compare tools
@@ -139,7 +152,7 @@ command -v siril-cli && siril-cli --version || /Applications/Siril.app/Contents/
 
 If anything fails, report it and stop — do not advance to Done.
 
-**Step 8 — Star the repo (ask once).**
+**Step 9 — Star the repo (ask once).**
 
 ```
 gh auth status
@@ -150,7 +163,7 @@ gh auth status
 - No `gh` / not authenticated → tell the user: smash the ⭐ at
   https://github.com/belov38/seestar-stacking-tools
 
-**Step 9 — Done.** Tell the user:
+**Step 10 — Done.** Tell the user:
 
 ```
 cd <clone>
@@ -166,8 +179,8 @@ Processing order, one skill per step (all in `.claude/skills/`, project-scoped):
 |---|---|---|---|
 | 1. Stack | `seestar-stacking-compare` | Siril | best params depend on frame count + target type |
 | 2. Background extraction | `seestar-background-extraction-compare` | GraXpert AI | Siril subsky backfires on star fields; the cast is the real problem |
-| 3. Deconvolution | `seestar-deconvolution-compare` | Siril RL ~10it | mfdeconv/Seti ring; measure ring-vs-background, not just FWHM |
-| 4. Denoise | `seestar-denoise-compare` | GraXpert ~0.3 | monotonic noise↔blur tradeoff; deep stacks need little |
+| 3. Deconvolution | `seestar-deconvolution-compare` | BXT (licensed) / Siril RL ~10it | mfdeconv/Seti ring; measure ring-vs-background, not just FWHM |
+| 4. Denoise | `seestar-denoise-compare` | NXT (licensed) / GraXpert ~0.3 | monotonic noise↔blur tradeoff; deep stacks need little |
 
 Then plate-solve + SPCC colour calibration (Siril, no skill — the pipeline runs them), then
 stretch (manual). Each skill has a `SKILL.md` (when/how + variant guidance), a runner
@@ -180,12 +193,15 @@ stretch (manual). Each skill has a `SKILL.md` (when/how + variant guidance), a r
 spectrally incompatible — mixed sets split into separate runs), gate frame quality before
 stacking (score every sub for clouds / haze / defocus / trails, quarantine on approval),
 run the four skill steps above, then plate-solve and SPCC-colour-calibrate the linear
-master (Siril, Seestar S30 sensor + the run's filter profile), split out linear Ha/OIII
-channel masters when the target shows real emission separation (measured, auto-skipped for
-clusters/galaxies; LP runs only), and finish with an autostretch preview. On an emission
-run it then offers a teal-OIII recombine (`tools/hoo_recombine.py`) once the user supplies
-stretched, starless Ha/OIII channels. When both an LP and an IRCUT master of the object
-exist, it offers the LP+IRCUT composite (`tools/composite.py`).
+master (Siril, Seestar S30 sensor + the run's filter profile), and finish with an
+autostretch preview. With the optional RC Astro CLI (licensed, probed once per run):
+BlurXTerminator replaces Siril RL at the deconvolution step and NoiseXTerminator replaces
+the GraXpert sweep — same measured adopt rules — and StarXTerminator unlocks two optional
+post-steps that deliver **composition-ready layers** (the user composes in their own tool):
+a starless decomposition of the final master (`*_final_starless.fit` + `*_final_stars.fit`,
+one pixel grid), and — when IRCUT data exists (a second master, or the minority of a mixed
+session routed "LP → nebula, IRCUT → stars") — a two-filter layer set
+(`*_final_starless.fit` + `*_final_IRCUT_stars.fit`, WCS-aligned via `tools/composite.py`).
 Each step's parameters are picked by measurement; it **stops to ask only when a choice is
 doubtful** (deconv rings, backfired background, volatile star-weighted stack) — plus always
 at the frame quality gate, since dropping frames is the user's call.
@@ -209,6 +225,11 @@ to the input; at the end the pipeline offers to delete the heavy intermediates.
   (background / star count / FWHM / roundness → CLOUD / HAZY / SOFT / TRAILED, robust
   thresholds per exposure+filter group). Backs the pipeline's frame quality gate; `--move`
   quarantines flagged subs (moves, never deletes).
+- `tools/rcastro.py probe | bxt|sxt|nxt IN OUT [args]` — adapter for the optional RC Astro
+  CLI: `probe` prints one per-product license line (`RCASTRO: cli=… bxt=ok sxt=ok nxt=no`,
+  or `RCASTRO: absent`; never an error), the product forms are thin passthrough wrappers
+  (`--overwrite`, JSON events parsed, non-zero exit on failure). Backs the pipeline's
+  Steps 6/7/11/12.
 - `tools/palette.py MASTER.fit [--outdir DIR --basename NAME]` — dual-band Ha/OIII channel
   split from an LP-filter RGB master: splits Ha (R) / OIII (G+B), gates on a measured
   emission-separation metric (EMIT/SKIP, stars suppressed first — star colours fake
@@ -216,19 +237,20 @@ to the input; at the end the pipeline offers to delete the heavy intermediates.
   `*_OIII.fit` (header/WCS intact). No combined HOO cube — a linked stretch of one renders
   Ha-dominant targets uniformly red; teal is a separate starless step (`hoo_recombine.py`).
   No SII line, so a synthetic "SHO" adds nothing. LP masters only — a broadband (IRCUT)
-  master hard-skips. Backs the pipeline's Step 10.
+  master hard-skips. Manual tool — not part of the pipeline (split channels in your
+  compositing tool instead).
 - `tools/hoo_recombine.py HA_STARLESS.fit OIII_STARLESS.fit [--out OUT.fit] [--oiii-boost k]
   [--oiii-blur σ]` — teal HOO from user-made **stretched, starless** Ha/OIII channels:
   LinearFit Ha→OIII (ref=OIII, so weak OIII survives) → mild OIII blur (chroma denoise) →
   optional boost → dynamic green blend `w=(O·Ha)^(1−O·Ha); R=Ha, G=w·Ha+(1−w)·O, B=O` →
-  average-neutral SCNR. Writes an RGB `*_HOO_teal.fit` + PNG (header/WCS intact). Backs the
-  pipeline's optional Step 12.
+  average-neutral SCNR. Writes an RGB `*_HOO_teal.fit` + PNG (header/WCS intact). Manual
+  tool — not part of the pipeline.
 - `tools/composite.py LP.fit IRCUT.fit [--mode align|hargb]` — LP+IRCUT composite: WCS-
   reprojects the IRCUT (broadband) master onto the LP master's pixel grid — the aligned
   result is a natural-star-colour layer for star recomposition over a starless LP/HOO
   stretch (the LP filter guts stellar continuum; IRCUT keeps it honest). `--mode hargb`
   adds continuum-subtracted Ha (`Ha = LP_R − k·IRCUT_R`) and an HaRGB blend. Both inputs
-  must be plate-solved. Backs the pipeline's optional Step 13.
+  must be plate-solved. Backs the pipeline's optional Step 12.
 - `tools/astrobin_session_csv.py LIGHTS --out acquisition.csv` — scans the lights and emits
   the AstroBin acquisition-sessions import CSV (groups subs into observing nights by the
   local filename timestamp, one row per night+filter; fills date / count / duration /
@@ -245,6 +267,9 @@ The **Automated install** section above is the preferred path. To set up by hand
   "onnxruntime>=1.20" onnx scikit-image opencv-python-headless packaging
 .venv/bin/python tools/gpu/fetch_models.py        # GPU denoise/background models
 ```
+
+Optional: RC Astro CLI (licensed) — see the runbook's RC Astro step; verify with
+`.venv/bin/python tools/rcastro.py probe`.
 
 One venv for everything: the skill measurers need astropy/numpy (+`sep`/`scipy`); the GPU
 runner (`tools/gpu/`) adds onnxruntime/scikit-image/opencv. Only external tool is Siril,
