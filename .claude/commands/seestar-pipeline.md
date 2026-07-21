@@ -328,17 +328,20 @@ user commits skills/tools, not run outputs).
 The deliverable is composition-ready layers — the user composes in their own tool
 (e.g. Alchemy); the pipeline does **no** blending, no HOO, no palettes.
 
-1. **Decompose the linear master** — no stretch anywhere in this step; the layers stay
-   linear and the user stretches them in their own tool:
+1. **Decompose the linear master** — the layers stay linear and the user stretches them
+   in their own tool. SXT is trained on stretched data, so the runner does a reversible
+   MTF round-trip internally (stretch median→0.25 → sxt → exact inverse; round-trip error
+   ~1e-5) and derives the stars layer by exact subtraction:
    ```
-   .venv/bin/python tools/rcastro.py sxt 05_stretch/<OBJECT>_final_spcc.fit \
-     05_stretch/<OBJECT>_final_starless.fit --stars --unscreen
+   .venv/bin/python tools/rcastro.py sxt-linear 05_stretch/<OBJECT>_final_spcc.fit \
+     05_stretch/<OBJECT>_final_starless.fit 05_stretch/<OBJECT>_final_stars.fit
    ```
    (input is `<OBJECT>_final_solved.fit` if SPCC failed)
-   → `<OBJECT>_final_starless.fit` (linear nebula/galaxy layer) + the stars sidecar
-   `<OBJECT>_final_starless-stars.fit`; rename the sidecar to `<OBJECT>_final_stars.fit`.
-   Both share the input's pixel grid — sxt never moves pixels, so the layers are
-   orientation-matched by construction, header + WCS intact.
+   → `<OBJECT>_final_starless.fit` (linear nebula/galaxy layer) and
+   `<OBJECT>_final_stars.fit` (linear stars = master − starless). The set is **closed**:
+   starless + stars reproduces the master pixel-for-pixel, so linear recombination after
+   the user's nebula processing is plain addition — nothing is lost, SXT residues land in
+   the stars layer. Same pixel grid, header + WCS intact.
 2. **Deliver:** previews of both layers into `05_stretch/` (`tools/preview.py`
    auto-stretches for the PNG only — the `.fit` layers stay linear; they must survive
    cleanup), log to REPORT.md, copy both layers to DATADIR.
@@ -355,15 +358,14 @@ colour (stars need little SNR). *Offer* when sxt=ok and either applies; never ru
    (WCS reprojection onto the LP grid — from here every file shares one orientation).
    Log the `COMPOSITE: ALIGN (…, coverage=…)` line; low coverage → say the masters barely
    overlap.
-2. Two sxt calls — both on **linear** data, no stretch anywhere in this step (the user
-   stretches the layers in their own tool):
-   - LP: `rcastro.py sxt <OBJECT>_final_spcc.fit <OBJECT>_final_starless.fit`
-     (linear starless nebula base; LP star colour is discarded — the LP filter guts
-     continuum);
-   - IRCUT: `rcastro.py sxt <OBJECT>_final_IRCUT_aligned.fit
-     <OBJECT>_final_IRCUT_starless_tmp.fit --stars --unscreen` — keep only the stars
-     sidecar `<OBJECT>_final_IRCUT_starless_tmp-stars.fit`, renamed
-     `<OBJECT>_final_IRCUT_stars.fit`; delete the tmp starless.
+2. Two `sxt-linear` calls — both on **linear** data (MTF round-trip + exact subtraction
+   inside the runner; the user stretches the layers in their own tool):
+   - LP: `rcastro.py sxt-linear <OBJECT>_final_spcc.fit <OBJECT>_final_starless.fit
+     <OBJECT>_final_LP_stars_tmp.fit` — keep the starless nebula base, delete the LP
+     stars file (LP star colour is discarded — the LP filter guts continuum);
+   - IRCUT: `rcastro.py sxt-linear <OBJECT>_final_IRCUT_aligned.fit
+     <OBJECT>_final_IRCUT_starless_tmp.fit <OBJECT>_final_IRCUT_stars.fit` — keep the
+     stars (exact complement of the aligned IRCUT master), delete the tmp starless.
 3. Deliver layers as-is: linear `starless` + `IRCUT_stars` (+ linear `IRCUT_aligned`).
    No blending.
 4. Previews into `05_stretch/` (auto-stretched PNGs only — the `.fit` layers stay linear),

@@ -121,6 +121,57 @@ def test_run_product_success(monkeypatch, tmp_path):
     assert np.array_equal(fits.getdata(out), data)
 
 
+def test_mtf_roundtrip_exact():
+    x = np.linspace(0.0, 1.0, 101)
+    for m in (0.01, 0.05, 0.25, 0.5):
+        back = rcastro._mtf(rcastro._mtf(x, m), 1.0 - m)
+        assert np.allclose(back, x, atol=1e-12)
+
+
+def test_sxt_linear_complementary(monkeypatch, tmp_path):
+    inp = tmp_path / "in.fit"
+    starless_out = tmp_path / "starless.fit"
+    stars_out = tmp_path / "stars.fit"
+    rng = np.random.default_rng(0)
+    data = rng.normal(0.001, 0.0001, (3, 16, 16)).astype(np.float32)
+    data[:, 5, 5] = 0.9  # a bright star
+    _write_fits(inp, data, "BOTTOM-UP")
+
+    def fake_run_product(product, tin, tout, extra):
+        assert product == "sxt" and extra == []
+        d = fits.getdata(tin)
+        h = fits.getheader(tin)
+        d = d.copy()
+        d[:, 5, 5] = np.median(d)  # crude star removal on the stretched frame
+        fits.PrimaryHDU(d, h).writeto(tout, overwrite=True)
+        return 0
+
+    monkeypatch.setattr(rcastro, "run_product", fake_run_product)
+    assert rcastro.sxt_linear(str(inp), str(starless_out), str(stars_out)) == 0
+    orig = fits.getdata(inp)
+    starless = fits.getdata(starless_out)
+    stars = fits.getdata(stars_out)
+    # exact complement: starless + stars reproduces the input (float32 rounding only)
+    assert np.allclose(starless + stars, orig, atol=1e-6)
+    # the star pixel moved to the stars layer
+    assert starless[0, 5, 5] < 0.01 and stars[0, 5, 5] > 0.5
+    # linear background survived the MTF round-trip
+    assert np.allclose(starless[:, 0, :], orig[:, 0, :], atol=1e-5)
+    for path in (starless_out, stars_out):
+        assert fits.getheader(path)["ROWORDER"] == "BOTTOM-UP"
+    # temp files cleaned up
+    assert set(p.name for p in tmp_path.iterdir()) == {"in.fit", "starless.fit", "stars.fit"}
+
+
+def test_sxt_linear_propagates_failure(monkeypatch, tmp_path):
+    inp = tmp_path / "in.fit"
+    _write_fits(inp, np.full((3, 8, 8), 0.001), "BOTTOM-UP")
+    monkeypatch.setattr(rcastro, "run_product", lambda *a: 1)
+    rc = rcastro.sxt_linear(str(inp), str(tmp_path / "sl.fit"), str(tmp_path / "st.fit"))
+    assert rc != 0
+    assert not (tmp_path / "sl.fit").exists() and not (tmp_path / "st.fit").exists()
+
+
 def test_run_product_normalizes_roworder(monkeypatch, tmp_path):
     inp = tmp_path / "in.fit"
     out = tmp_path / "out.fit"

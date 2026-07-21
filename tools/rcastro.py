@@ -118,13 +118,67 @@ def run_product(product, inp, out, extra):
     return 0
 
 
+MTF_TARGET = 0.25
+
+
+def _mtf(x, m):
+    """PixInsight midtones transfer function: maps m -> 0.5, fixes 0 and 1.
+    Exactly invertible: _mtf(_mtf(x, m), 1 - m) == x."""
+    return ((m - 1.0) * x) / ((2.0 * m - 1.0) * x - m)
+
+
+def sxt_linear(inp, starless_out, stars_out):
+    """Star removal on LINEAR data via a reversible MTF round-trip.
+
+    SXT is trained on stretched images, so: MTF stretch (median -> MTF_TARGET)
+    -> sxt -> exact inverse MTF on the starless result. The stars layer is the
+    exact complement `input - starless`, so starless + stars reproduces the
+    input identically and linear recombination is plain addition."""
+    from astropy.io import fits
+
+    import numpy as np
+
+    with fits.open(inp) as hdul:
+        data = hdul[0].data.astype(np.float64)
+        header = hdul[0].header.copy()
+    b = float(np.median(data))
+    # b outside (0, MTF_TARGET) -> m=0.5 is the identity MTF (already bright/degenerate)
+    if 0.0 < b < MTF_TARGET:
+        m = b * (MTF_TARGET - 1.0) / (2.0 * MTF_TARGET * b - MTF_TARGET - b)
+    else:
+        m = 0.5
+    base, ext = os.path.splitext(starless_out)
+    tmp_in = base + "-mtf-tmp" + ext
+    tmp_starless = base + "-mtf-starless-tmp" + ext
+    stretched = _mtf(np.clip(data, 0.0, 1.0), m)
+    fits.PrimaryHDU(stretched.astype(np.float32), header).writeto(tmp_in, overwrite=True)
+    try:
+        rc = run_product("sxt", tmp_in, tmp_starless, [])
+        if rc != 0:
+            return rc
+        with fits.open(tmp_starless) as hdul:
+            starless = _mtf(np.clip(hdul[0].data.astype(np.float64), 0.0, 1.0), 1.0 - m)
+    finally:
+        for path in (tmp_in, tmp_starless):
+            if os.path.exists(path):
+                os.remove(path)
+    fits.PrimaryHDU(starless.astype(np.float32), header).writeto(
+        starless_out, overwrite=True)
+    fits.PrimaryHDU((data - starless).astype(np.float32), header).writeto(
+        stars_out, overwrite=True)
+    return 0
+
+
 def main(argv):
     if len(argv) >= 1 and argv[0] == "probe":
         print(probe_line())
         return 0
+    if len(argv) == 4 and argv[0] == "sxt-linear":
+        return sxt_linear(argv[1], argv[2], argv[3])
     if len(argv) >= 3 and argv[0] in PRODUCTS:
         return run_product(argv[0], argv[1], argv[2], argv[3:])
-    print(f"usage: rcastro.py probe | {{{'|'.join(PRODUCTS)}}} IN OUT [args...]",
+    print(f"usage: rcastro.py probe | {{{'|'.join(PRODUCTS)}}} IN OUT [args...]"
+          " | sxt-linear IN STARLESS_OUT STARS_OUT",
           file=sys.stderr)
     return 2
 
