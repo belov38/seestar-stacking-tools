@@ -191,7 +191,8 @@ stretch (manual). Each skill has a `SKILL.md` (when/how + variant guidance), a r
 `/seestar-pipeline <lights-dir | stack.fits>` runs the full chain: explore the input
 (lights → stack first; single FITS → ready stack), route by filter (LP vs IRCUT sets are
 spectrally incompatible — mixed sets split into separate runs), gate frame quality before
-stacking (score every sub for clouds / haze / defocus / trails, quarantine on approval),
+stacking (score every sub for clouds / haze / defocus / trails; clouds, trails and true
+defocus are quarantined automatically — they never reach the stack),
 run the four skill steps above, then plate-solve and SPCC-colour-calibrate the linear
 master (Siril, Seestar S30 sensor + the run's filter profile), and finish with an
 autostretch preview. With the optional RC Astro CLI (licensed, probed once per run):
@@ -203,8 +204,8 @@ one pixel grid), and — when IRCUT data exists (a second master, or the minorit
 session routed "LP → nebula, IRCUT → stars") — a two-filter layer set
 (`*_final_starless.fit` + `*_final_IRCUT_stars.fit`, WCS-aligned via `tools/composite.py`).
 Each step's parameters are picked by measurement; it **stops to ask only when a choice is
-doubtful** (deconv rings, backfired background, volatile star-weighted stack) — plus always
-at the frame quality gate, since dropping frames is the user's call.
+doubtful** (deconv rings, backfired background, volatile star-weighted stack, or a frame
+gate that would drop an unusually large share of the night).
 
 Outputs land in a run dir next to your data (`<data-dir>/belov38-<object>-<stamp>/`) with a
 `REPORT.md` log and a `.fit` + preview PNG at every stage, so you can resume manually from

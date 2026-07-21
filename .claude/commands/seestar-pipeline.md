@@ -154,19 +154,34 @@ whole groups), and classifies with robust median/MAD thresholds per group:
   mild-seeing kind; drop true defocus (star count collapsed / FWHM +50%+).
 - **TRAILED** — roundness < −3σ (and < 0.8): wind / tracking error → drop if visibly elongated.
 
-**Always STOP and ask** — this step is never auto (dropping frames costs integration the user paid
-for). Present the per-class counts **with integration minutes lost** per option, note the sanity
-cross-check (Seestar's own on-device stack count, e.g. `Stacked_552_...` vs subs captured, roughly
-predicts how many frames are bad), give your recommendation (typically: drop CLOUD + TRAILED,
-keep HAZY + SOFT), and offer: **drop CLOUD only / drop recommended set / drop all flagged /
-keep everything**. On the answer, quarantine — move, never delete:
+**Strict gate — bad frames never reach the stack.** Clouds and trails add noise, not
+signal: stacking them dilutes SNR for the whole rest of the pipeline (the NGC 292 lesson
+above). So this step is **AUTO by default**:
+
+- **AUTO-drop, no question asked:** CLOUD and TRAILED — quarantine them immediately, and
+  also any SOFT frame that is true defocus (star count collapsed, or FWHM +50%+ over the
+  group median). Never offer to stack them "as is" — there is no option to keep clouds or
+  smears.
+- **AUTO-keep:** HAZY and mild SOFT (elevated bg with normal stars / mild seeing) —
+  normalization compensates; report their counts but don't drop paid-for integration
+  that still carries signal.
+- **Safety valve — the only STOP:** if the auto-drop would remove **more than ~40% of the
+  total frames** (or the scorer prints its "thresholds unstable" warning on the dominant
+  group), something is off — a whole-night problem or a scorer misfire. Present the
+  per-class counts with integration minutes, the sanity cross-check (Seestar's on-device
+  stack count, e.g. `Stacked_552_...` vs subs captured, roughly predicts how many frames
+  are bad), and ask before quarantining that much.
+
+Quarantine — move, never delete:
 
 ```
 .venv/bin/python tools/score_subs.py <LIGHTS> --move CLOUD,TRAILED --aside-dir <DATADIR>/_clouds_aside
 ```
 
-Log the decision, per-class counts, and the new frame count / integration total to `REPORT.md`.
-The AstroBin CSV (Finish step) scans `lights/` and so picks up the reduced set automatically.
+(add true-defocus SOFT frames to the move by filename if the CSV flags them). Report to
+the user what was dropped and why (per-class counts, minutes lost, minutes kept), and log
+the same to `REPORT.md`. The AstroBin CSV (Finish step) scans `lights/` and so picks up
+the reduced set automatically.
 
 ## The processing steps (Steps 4–10)
 
