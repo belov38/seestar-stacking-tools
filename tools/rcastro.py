@@ -66,10 +66,36 @@ def probe_line():
     return f"RCASTRO: cli={version} {parts}"
 
 
+def run_product(product, inp, out, extra):
+    """Run one product on one file. Returns 0 on success (out exists), else non-zero."""
+    cli = find_cli()
+    if cli is None:
+        print("rcastro: rc-astro CLI not found", file=sys.stderr)
+        return 1
+    cmd = [cli, "--no-banner", "--json", product, inp, "-o", out, "--overwrite"] + list(extra)
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    for line in proc.stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if event.get("event") == "error":
+            print(f"rcastro {product}: {event.get('message', 'error')}", file=sys.stderr)
+    if proc.returncode != 0:
+        print(f"rcastro {product}: exit {proc.returncode}", file=sys.stderr)
+        return proc.returncode or 1
+    if not os.path.exists(out):
+        print(f"rcastro {product}: output not written: {out}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def main(argv):
     if len(argv) >= 1 and argv[0] == "probe":
         print(probe_line())
         return 0
+    if len(argv) >= 3 and argv[0] in PRODUCTS:
+        return run_product(argv[0], argv[1], argv[2], argv[3:])
     print(f"usage: rcastro.py probe | {{{'|'.join(PRODUCTS)}}} IN OUT [args...]",
           file=sys.stderr)
     return 2
