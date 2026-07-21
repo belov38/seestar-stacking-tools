@@ -33,6 +33,29 @@ iterations. Cosmic Clarity is deprecated. **Siril `makepsf stars` measures the P
 stack itself**, so it matches the real star size and stays clean. Denoise is a separate step
 (GraXpert, after deconvolution).
 
+## RC Astro path (BlurXTerminator) — preferred when licensed
+
+If `tools/rcastro.py probe` reports `bxt=ok`, skip the Siril RL sweep entirely and run two
+bxt variants on the **linear** stack:
+
+```
+../../../.venv/bin/python ../../../tools/rcastro.py bxt stack.fit bxt_default.fit --ss 0.5 --sn 1.0
+../../../.venv/bin/python ../../../tools/rcastro.py bxt stack.fit bxt_correct.fit --correct-only
+```
+
+Measure them with the SAME measurer and the SAME adopt rule as the RL variants:
+
+```
+python measure_deconv.py stack.fit bxt_default.fit bxt_correct.fit
+```
+
+- Adopt only on FWHM gain ≥3% AND ring_worst ≥ −1×RMS. bxt is trained not to ring, but the
+  measurement — not the reputation — decides; a REJECT keeps the un-deconvolved baseline
+  (do not fall back to the RL sweep: on S30 data RL was never cleaner than bxt's rejects).
+- `--correct-only` fixes PSF aberrations without sharpening — often the honest winner on
+  undersampled S30 stacks where sharpening has no room.
+- A failed bxt run (non-zero exit) → fall back to the Siril RL workflow below.
+
 ## Tools (in this skill dir)
 - `experiment.ssf` — Siril RL variants on a stack (`stack.fit` in the workdir → `rl_*.fit`).
 - `measure_deconv.py BASELINE.fit DECONV...fit` — per-variant bright-star FWHM Δ, ring depth
