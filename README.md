@@ -225,14 +225,17 @@ to the input; at the end the pipeline offers to delete the heavy intermediates.
   (background / star count / FWHM / roundness → CLOUD / HAZY / SOFT / TRAILED, robust
   thresholds per exposure+filter group). Backs the pipeline's frame quality gate; `--move`
   quarantines flagged subs (moves, never deletes).
-- `tools/rcastro.py probe | bxt|sxt|nxt IN OUT [args] | sxt-linear IN STARLESS STARS` —
+- `tools/rcastro.py probe | bxt|sxt|nxt IN OUT [args] | sxt-linear IN STARLESS STARS
+  [NEUTRAL]` —
   adapter for the optional RC Astro CLI: `probe` prints one per-product license line
   (`RCASTRO: cli=… bxt=ok sxt=ok nxt=no`, or `RCASTRO: absent`; never an error), the
   product forms are thin passthrough wrappers (`--overwrite`, JSON events parsed,
   non-zero exit on failure). `sxt-linear` removes stars from a **linear** master via a
   reversible MTF round-trip (median→0.25 → sxt → exact inverse) and writes the closed
   complementary pair: linear starless + linear stars (= master − starless, so
-  starless + stars reproduces the master and linear recombination is plain addition).
+  starless + stars reproduces the master and linear recombination is plain addition);
+  an optional 4th path adds a neutral white-star mask (per-pixel channel mean — for LP
+  runs, where the filter guts stellar continuum and star colour is untrustworthy).
   Backs the pipeline's Steps 6/7/11/12.
 - `tools/palette.py MASTER.fit [--outdir DIR --basename NAME]` — dual-band Ha/OIII channel
   split from an LP-filter RGB master: splits Ha (R) / OIII (G+B), gates on a measured

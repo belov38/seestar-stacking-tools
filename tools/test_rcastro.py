@@ -163,6 +163,33 @@ def test_sxt_linear_complementary(monkeypatch, tmp_path):
     assert set(p.name for p in tmp_path.iterdir()) == {"in.fit", "starless.fit", "stars.fit"}
 
 
+def test_sxt_linear_neutral_mask(monkeypatch, tmp_path):
+    inp = tmp_path / "in.fit"
+    starless_out = tmp_path / "starless.fit"
+    stars_out = tmp_path / "stars.fit"
+    neutral_out = tmp_path / "stars_neutral.fit"
+    data = np.full((3, 16, 16), 0.001, dtype=np.float32)
+    data[0, 5, 5], data[1, 5, 5], data[2, 5, 5] = 0.9, 0.5, 0.3  # a coloured star
+    _write_fits(inp, data, "BOTTOM-UP")
+
+    def fake_run_product(product, tin, tout, extra):
+        d = fits.getdata(tin).copy()
+        d[:, 5, 5] = np.median(d)
+        fits.PrimaryHDU(d, fits.getheader(tin)).writeto(tout, overwrite=True)
+        return 0
+
+    monkeypatch.setattr(rcastro, "run_product", fake_run_product)
+    assert rcastro.sxt_linear(str(inp), str(starless_out), str(stars_out),
+                              str(neutral_out)) == 0
+    stars = fits.getdata(stars_out)
+    neutral = fits.getdata(neutral_out)
+    # all channels equal (white stars), each the per-pixel mean of the stars layer
+    assert np.array_equal(neutral[0], neutral[1]) and np.array_equal(neutral[1], neutral[2])
+    assert np.allclose(neutral[0], stars.mean(axis=0), atol=1e-7)
+    # still linear and dim: the star pixel keeps its (mean) amplitude, bg stays tiny
+    assert 0.3 < neutral[0, 5, 5] < 0.7 and abs(neutral[0, 0, 0]) < 1e-3
+
+
 def test_sxt_linear_propagates_failure(monkeypatch, tmp_path):
     inp = tmp_path / "in.fit"
     _write_fits(inp, np.full((3, 8, 8), 0.001), "BOTTOM-UP")

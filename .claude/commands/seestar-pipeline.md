@@ -341,7 +341,14 @@ The deliverable is composition-ready layers — the user composes in their own t
    `<OBJECT>_final_stars.fit` (linear stars = master − starless). The set is **closed**:
    starless + stars reproduces the master pixel-for-pixel, so linear recombination after
    the user's nebula processing is plain addition — nothing is lost, SXT residues land in
-   the stars layer. Same pixel grid, header + WCS intact.
+   the stars layer. Same pixel grid, header + WCS intact. The stars layer is exactly what
+   VeraLux StarComposer expects — a dim linear star mask its Log D slider (≈5–10)
+   develops.
+   **On an LP run add the neutral mask** (4th argument): the LP filter guts stellar
+   continuum, so the stars layer's colour is not trustworthy — pass
+   `05_stretch/<OBJECT>_final_stars_neutral.fit` as well to get a white-star linear mask
+   (per-pixel channel mean). On an IRCUT (broadband) run skip it — the star colours are
+   honest.
 2. **Deliver:** previews of both layers into `05_stretch/` (`tools/preview.py`
    auto-stretches for the PNG only — the `.fit` layers stay linear; they must survive
    cleanup), log to REPORT.md, copy both layers to DATADIR.

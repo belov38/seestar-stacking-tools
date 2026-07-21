@@ -127,13 +127,19 @@ def _mtf(x, m):
     return ((m - 1.0) * x) / ((2.0 * m - 1.0) * x - m)
 
 
-def sxt_linear(inp, starless_out, stars_out):
+def sxt_linear(inp, starless_out, stars_out, neutral_out=None):
     """Star removal on LINEAR data via a reversible MTF round-trip.
 
     SXT is trained on stretched images, so: MTF stretch (median -> MTF_TARGET)
     -> sxt -> exact inverse MTF on the starless result. The stars layer is the
     exact complement `input - starless`, so starless + stars reproduces the
-    input identically and linear recombination is plain addition."""
+    input identically and linear recombination is plain addition.
+
+    neutral_out (optional, RGB input only): additionally write a neutral
+    (white-star) mask — the per-pixel channel mean replicated to all channels,
+    still linear and dim. For filters that gut stellar continuum (Seestar LP)
+    the colour in the stars layer is not trustworthy; a neutral mask sidesteps
+    it for star-composition tools."""
     from astropy.io import fits
 
     import numpy as np
@@ -164,8 +170,17 @@ def sxt_linear(inp, starless_out, stars_out):
                 os.remove(path)
     fits.PrimaryHDU(starless.astype(np.float32), header).writeto(
         starless_out, overwrite=True)
-    fits.PrimaryHDU((data - starless).astype(np.float32), header).writeto(
+    stars = data - starless
+    fits.PrimaryHDU(stars.astype(np.float32), header).writeto(
         stars_out, overwrite=True)
+    if neutral_out is not None:
+        if stars.ndim != 3:
+            print("rcastro sxt-linear: neutral mask needs an RGB input, skipping",
+                  file=sys.stderr)
+        else:
+            neutral = np.broadcast_to(stars.mean(axis=0), stars.shape)
+            fits.PrimaryHDU(neutral.astype(np.float32), header).writeto(
+                neutral_out, overwrite=True)
     return 0
 
 
@@ -173,12 +188,13 @@ def main(argv):
     if len(argv) >= 1 and argv[0] == "probe":
         print(probe_line())
         return 0
-    if len(argv) == 4 and argv[0] == "sxt-linear":
-        return sxt_linear(argv[1], argv[2], argv[3])
+    if len(argv) in (4, 5) and argv[0] == "sxt-linear":
+        return sxt_linear(argv[1], argv[2], argv[3],
+                          argv[4] if len(argv) == 5 else None)
     if len(argv) >= 3 and argv[0] in PRODUCTS:
         return run_product(argv[0], argv[1], argv[2], argv[3:])
     print(f"usage: rcastro.py probe | {{{'|'.join(PRODUCTS)}}} IN OUT [args...]"
-          " | sxt-linear IN STARLESS_OUT STARS_OUT",
+          " | sxt-linear IN STARLESS_OUT STARS_OUT [NEUTRAL_STARS_OUT]",
           file=sys.stderr)
     return 2
 
